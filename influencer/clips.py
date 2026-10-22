@@ -43,7 +43,7 @@ def _llm_prompt(topic: str | None, persona: dict, n: int) -> str:
     if topic:
         lines.append(f"TOPIC (use it): {topic}")
     lines += [
-        f"Return ONE JSON object with keys: topic, caption, hashtags, scenes. scenes = exactly {n} objects, "
+        f"Return ONE JSON object with keys: topic, hook_text, caption, hashtags, scenes. scenes = exactly {n} objects, "
         "each with keys camera_angle, visual, action, dialogue.",
         f"- Each scene is ONE {CLIP_SECONDS}-second clip of the SAME character. Vary the camera angle "
         "(close-up, medium shot, low angle, over-shoulder, handheld).",
@@ -51,6 +51,8 @@ def _llm_prompt(topic: str | None, persona: dict, n: int) -> str:
         "- action: one simple emotion + small movement.",
         "- dialogue: Hinglish (Hindi in Roman script), max 10 words, natural speech, scene 1 = scroll-stopping hook, "
         "last scene = call to action or question. No emojis.",
+        "- hook_text: max 6 words shown as big on-screen text for the first 2 seconds; curiosity or clear benefit, "
+        "Hinglish, no emojis.",
         "- caption: Hinglish, 2-4 short lines, 1-3 emojis, ends with a question. hashtags: 8-12 strings, no #.",
         "RULES: wholesome and brand-safe, adult character, no sexual or revealing styling, no medical or "
         "guaranteed-result claims, nothing political, never pretend to be a real human.",
@@ -73,7 +75,8 @@ def _fallback(topic: str | None, n: int) -> dict:
          "Smiles and raises eyebrows", "Tum kya try karoge? Comment mein batao."),
     ]
     scenes = [dict(zip(("camera_angle", "visual", "action", "dialogue"), base[i % len(base)])) for i in range(n)]
-    return {"topic": t[:80], "caption": f"{t} 💛\nTumhara kya khayal hai?", "hashtags": ["aiinfluencer", "reels"], "scenes": scenes}
+    return {"topic": t[:80], "hook_text": f"{t[:28]}? YE DEKHO", "caption": f"{t} 💛\nTumhara kya khayal hai?",
+            "hashtags": ["aiinfluencer", "reels"], "scenes": scenes}
 
 
 def _clean_scene(s, fb: dict) -> dict:
@@ -102,6 +105,7 @@ def make_scene_script(topic: str | None, persona: dict, n: int = N_SCENES, offli
     parts = [str(raw.get("caption") or fb["caption"]).strip(), persona.get("disclosure", ""),
              " ".join("#" + t for t in tags)]
     return {"topic": str(raw.get("topic") or fb["topic"])[:80], "caption": "\n\n".join(p for p in parts if p)[:2150],
+            "hook_text": re.sub(r"\s+", " ", str(raw.get("hook_text") or fb["hook_text"])).strip()[:60],
             "scenes": scenes, "note": note}
 
 
@@ -140,7 +144,7 @@ def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg
 
 
 def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, music: Path | None = None,
-          say=print) -> Path:
+          say=print, hook: str = "", end_text: str = "") -> Path:
     w, h, fps = int(video_cfg.get("width", 1080)), int(video_cfg.get("height", 1920)), int(video_cfg.get("fps", 30))
     names, words, t0 = [], [], 0.0
     for i, src in enumerate(clips):
@@ -153,7 +157,10 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
             words += [Word(x.text, x.start + t0, x.end + t0) for x in estimate_words(text, max(dur - 0.3, 0.5))]
         t0 += dur
     (work / "clips.txt").write_text("".join(f"file '{n}'\n" for n in names), encoding="utf-8")
-    ass = captions.build_ass(words, work / "captions.ass", video_cfg.get("caption", {}), w, h) if words else None
+    extra = captions.retention_events(hook, t0, w, h, float(video_cfg.get("hook_seconds", 2.5)),
+                                      bool(video_cfg.get("progress_bar", True)), end_text)
+    ass = (captions.build_ass(words, work / "captions.ass", video_cfg.get("caption", {}), w, h, extra)
+           if (words or extra) else None)
     out = work / "reel.mp4"
 
     def final(with_caps: bool) -> None:
