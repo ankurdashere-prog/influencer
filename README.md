@@ -79,3 +79,18 @@ Terminal commands: `python -m influencer make --kind reel --demo`, `doctor`, `au
 - `influencer/web/` dashboard (backend + `static/index.html`)
 - `influencer/` pipeline: ideas, images, tts, captions, video, storage, publish, persist
 - `character/persona.yaml`, `brands/*.yaml`, `settings.yaml` (Settings tab se bhi edit hote hain)
+
+## Bolta hua influencer (lip-sync) — paid, optional
+
+Render par GPU nahi hai, isliye lip-sync fal.ai (hosted API) se hota hai. Per-reel paisa lagta hai.
+Render Environment mein ye daalo (keys kabhi chat/GitHub par nahi):
+
+| Key | Value |
+|---|---|
+| `TALKING_PROVIDER` | `fal` (band karne ke liye `none`) |
+| `FAL_KEY` | fal.ai dashboard se API key |
+| `FAL_MODEL` | optional, default `fal-ai/kling-video/v1/standard/ai-avatar` |
+| `FAL_EXTRA_JSON` | optional, model ke extra fields, jaise `{"resolution":"480p"}` |
+
+`settings.yaml` ka `video.talking_seconds` batata hai shuru ke kitne second chehra bolega (baaki cutaway images + voice).
+Zyada seconds = zyada cost. Lip-sync fail ho to reel apne aap slideshow mode mein ban jaati hai.
