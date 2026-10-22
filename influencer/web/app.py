@@ -74,7 +74,7 @@ app = FastAPI(title="AI Influencer", lifespan=lifespan)
 # ---------------- auth ----------------
 @app.middleware("http")
 async def guard(request: Request, call_next):
-    if request.url.path.startswith("/api/cron/"):
+    if request.url.path == "/healthz" or request.url.path.startswith("/api/cron/"):
         return await call_next(request)  # token endpoint ke andar check hota hai
     pw = env("APP_PASSWORD")
     if not pw:
