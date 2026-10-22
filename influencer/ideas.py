@@ -63,7 +63,12 @@ def _prompt(kind, persona, cfg, avoid, brand, topic, n_scenes, pillar) -> str:
 
 
 def _normalize(plan: dict, kind: str, n_scenes: int, persona: dict, brand: dict | None) -> dict:
-    scenes = [s.get("image_prompt", "") if isinstance(s, dict) else str(s) for s in plan.get("scenes", [])]
+    raw_scenes = plan.get("scenes")
+    if not isinstance(raw_scenes, list):
+        raise LLMError("scenes list nahi hai")
+    if kind != "photo" and len(str(plan.get("voiceover", "")).split()) < 8:
+        raise LLMError("voiceover bahut chhota ya khaali hai")
+    scenes = [s.get("image_prompt", "") if isinstance(s, dict) else str(s) for s in raw_scenes]
     scenes = [s for s in scenes if s.strip()]
     if not scenes:
         raise LLMError("scenes khaali aaye")
@@ -169,12 +174,18 @@ def make_plan(kind: str, persona: dict, cfg: dict, history: list[dict],
               brand: dict | None = None, topic: str | None = None, offline: bool = False) -> dict:
     n_scenes = 1 if kind == "photo" else int(cfg["video"].get("scenes", 5))
     pillar = random.choice(_pillars(persona))
-    avoid_n = int(cfg.get("ideas", {}).get("history_to_avoid", 30))
-    avoid = [h.get("topic", "") for h in history[-avoid_n:] if h.get("topic")]
+    ideas_cfg = cfg.get("ideas") if isinstance(cfg.get("ideas"), dict) else {}
+    avoid_n = int(ideas_cfg.get("history_to_avoid", 30))
+    avoid = [h["topic"] for h in history[-avoid_n:] if isinstance(h, dict) and h.get("topic")]
+    reason = ""
     if not offline:
         try:
             raw = gemini_json(_prompt(kind, persona, cfg, avoid, brand, topic, n_scenes, pillar))
             return _normalize(raw, kind, n_scenes, persona, brand)
-        except LLMError as e:
-            print(f"[ideas] Gemini nahi chala ({e}). Built-in template use kar raha hu.")
-    return _normalize(_fallback(kind, persona, n_scenes, brand, pillar, topic), kind, n_scenes, persona, brand)
+        except Exception as e:  # noqa: BLE001 - kuch bhi galat ho to video phir bhi bane
+            reason = f"{type(e).__name__}: {e}"
+            print(f"[ideas] Gemini nahi chala ({reason}). Built-in template use kar raha hu.")
+    plan = _normalize(_fallback(kind, persona, n_scenes, brand, pillar, topic), kind, n_scenes, persona, brand)
+    if not offline and reason:
+        plan["fallback_reason"] = reason
+    return plan
