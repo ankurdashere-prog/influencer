@@ -52,6 +52,18 @@ class RefTests(unittest.TestCase):
         self.assertIn("ORIGINAL", p)
         self.assertNotIn("INSPIRATION", ideas._prompt("reel", persona(), settings(), [], None, None, 5, ("a", "b")))
 
+    def test_model_fallback_on_404(self):
+        from influencer import llm
+
+        gone = mock.Mock(status_code=404, ok=False, text="model no longer available")
+        good = mock.Mock(status_code=200, ok=True, text="")
+        good.json.return_value = {"candidates": [{"content": {"parts": [{"text": "{\"topic\": \"T\"}"}]}}]}
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k", "GEMINI_MODEL": "old-model"}), \
+                mock.patch("influencer.llm.requests.post", side_effect=[gone, good]) as post:
+            self.assertEqual(llm.gemini_json("x")["topic"], "T")
+        self.assertIn("old-model", post.call_args_list[0].args[0])
+        self.assertIn("gemini-3.8-flash", post.call_args_list[1].args[0])
+
 
 if __name__ == "__main__":
     unittest.main()
