@@ -170,7 +170,11 @@ async def generate(request: Request):
             raise HTTPException(400, "Ad ke liye brand chuno")
     topic = (body.get("topic") or "").strip()[:200] or None
     demo = bool(body.get("demo"))
-    jid = submit(f"{kind}", lambda: pipeline.run(kind, brand_path, post=False, demo=demo, topic=topic, source="web"))
+    ref_url = (body.get("ref_url") or "").strip()[:300] or None
+    if ref_url and kind != "reel":
+        raise HTTPException(400, "Reference link sirf Reel ke saath chalta hai")
+    jid = submit(f"{kind}", lambda: pipeline.run(kind, brand_path, post=False, demo=demo, topic=topic, source="web",
+                                                 ref_url=ref_url))
     return {"job": jid}
 
 
