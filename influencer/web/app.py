@@ -226,7 +226,9 @@ async def clips_script(request: Request):
 
 @app.post("/api/clips/merge")
 async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form("[]"),
-                      topic: str = Form("Clip Studio reel"), caption: str = Form(""), music: str = Form("1")):
+                      topic: str = Form("Clip Studio reel"), caption: str = Form(""), music: str = Form("1"),
+                      speed: str = Form("1.1"), music_volume: str = Form("0.12"),
+                      music_file: UploadFile | None = File(None)):
     if not clips or len(clips) > 12:
         raise HTTPException(400, "1 se 12 clips chahiye")
     try:
@@ -246,12 +248,33 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
         p = work / f"in_{i}.mp4"
         p.write_bytes(data)
         paths.append(p)
-    cfg = pipeline.settings()["video"]
-    mus = clipstudio.pick_music(ROOT) if music == "1" else None
+
+    def _num(v, lo, hi, default):
+        try:
+            return min(max(float(v), lo), hi)
+        except (TypeError, ValueError):
+            return default
+
+    cfg = dict(pipeline.settings()["video"], clip_speed=_num(speed, 0.8, 1.5, 1.1),
+               music_volume=_num(music_volume, 0.0, 0.6, 0.12))
+    mus = None
+    if music_file is not None and music_file.filename:
+        ext = Path(music_file.filename).suffix.lower()
+        mdata = await music_file.read()
+        if ext not in (".mp3", ".m4a", ".wav", ".aac", ".ogg"):
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, "Music mp3, m4a, wav, aac ya ogg hona chahiye")
+        if len(mdata) > 25_000_000 or len(mdata) < 1000:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, "Music file 25 MB se chhoti honi chahiye")
+        mus = work / f"music_in{ext}"
+        mus.write_bytes(mdata)
+    elif music == "1":
+        mus = clipstudio.pick_music(ROOT)
 
     def work_fn():
         final = clipstudio.merge(paths, dlg, work, cfg, mus, say=pipeline._say)
-        for q in paths:
+        for q in paths + ([mus] if mus else []):
             q.unlink(missing_ok=True)
         res = clipstudio.save_item(work, topic[:80], caption or topic, final)
         pipeline._say("Reel tayyar. Library mein dekho.")
