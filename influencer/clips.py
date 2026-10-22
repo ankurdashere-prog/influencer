@@ -119,16 +119,18 @@ def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg
     tail = float(cfg.get("clip_trim_tail", 0.2))
     if full - head - tail < 1.0:  # bahut chhoti clip ko mat kaato
         head = tail = 0.0
-    dur = full - head - tail
+    sp = min(max(float(cfg.get("clip_speed", 1.0)), 0.8), 1.5)
+    dur = (full - head - tail) / sp  # output ki lambai (speed ke baad)
     z = float(cfg.get("punch_zoom", 1.08)) if idx % 2 == 1 else 1.0
     zw, zh = int(w * z) // 2 * 2, int(h * z) // 2 * 2
-    vf = (f"scale={zw}:{zh}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={fps},format=yuv420p")
+    vf = (f"scale={zw}:{zh}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,setpts=PTS/{sp:.4f},fps={fps},format=yuv420p")
     enc = ["-threads", "1", "-filter_threads", "1", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
            "-x264-params", "rc-lookahead=8:ref=2", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "44100", "-ac", "2",
            "-b:a", "160k", "-t", f"{dur:.2f}"]
     fade = max(dur - 0.08, 0.1)
-    af = (f"loudnorm=I=-16:TP=-1.5:LRA=11,afade=t=in:d=0.04,afade=t=out:st={fade:.2f}:d=0.08"
-          if cfg.get("normalize_audio", True) else "anull")
+    tempo = f"atempo={sp:.4f}," if abs(sp - 1.0) > 0.001 else ""
+    af = tempo + (f"loudnorm=I=-16:TP=-1.5:LRA=11,afade=t=in:d=0.04,afade=t=out:st={fade:.2f}:d=0.08"
+                  if cfg.get("normalize_audio", True) else "anull")
     if has_audio(src):
         run_ff(["-ss", f"{head:.2f}", "-i", str(src), "-vf", vf, "-af", af, *enc, str(dst)])
     else:
