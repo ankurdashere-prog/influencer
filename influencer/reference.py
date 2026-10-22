@@ -5,6 +5,8 @@ Fail ho to saaf error aata hai (video khud upload karne wala raasta baad mein).
 """
 from __future__ import annotations
 
+import tempfile
+import time
 import base64
 import re
 import shutil
@@ -58,8 +60,7 @@ def shrink(src: Path, dst: Path, max_seconds: int = 60) -> Path:
         raise ReferenceError("Video compress hone ke baad bhi bahut bada hai.")
     return dst
 
-
-def analyze_video(path: Path, session=requests) -> dict:
+def analyze_video(path: Path, session=requests, sleep=time.sleep) -> dict:
     key = env("GEMINI_API_KEY")
     if not key:
         raise LLMError("GEMINI_API_KEY set nahi hai")
@@ -67,19 +68,31 @@ def analyze_video(path: Path, session=requests) -> dict:
         {"inline_data": {"mime_type": "video/mp4", "data": base64.b64encode(path.read_bytes()).decode()}},
         {"text": ANALYZE_PROMPT}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.3}}
+    last = ""
+    # har model ko 3 baar (busy/429/5xx par wait karke), phir agla model
     for model in model_candidates():
-        r = session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                         headers={"x-goog-api-key": key}, json=body, timeout=180)
-        if not _is_gone(r):
+        for attempt in range(3):
+            r = session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                             headers={"x-goog-api-key": key}, json=body, timeout=180)
+            if r.status_code in (429, 500, 502, 503, 504):
+                last = f"{model}: {r.status_code} {r.text[:120]}"
+                sleep(4 * (attempt + 1))
+                continue
             break
-    if not r.ok:
-        raise LLMError(f"Gemini video analysis {r.status_code}: {r.text[:300]}")
-    try:
-        import json
+        else:
+            continue  # is model ne 3 baar busy kaha, agla model
+        if _is_gone(r):
+            last = f"{model} band hai"
+            continue
+        if not r.ok:
+            raise LLMError(f"Gemini video analysis {r.status_code}: {r.text[:300]}")
+        try:
+            import json
 
-        return _coerce(json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"]))
-    except Exception as e:  # noqa: BLE001
-        raise LLMError(f"Video analysis ka jawab samajh nahi aaya: {e}") from e
+            return _coerce(json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"]))
+        except Exception as e:  # noqa: BLE001
+            raise LLMError(f"Video analysis ka jawab samajh nahi aaya: {e}") from e
+    raise LLMError(f"Gemini abhi busy hai, 1-2 minute baad dobara try karo. ({last})")
 
 
 def inspiration_from_url(url: str, say=print) -> str:
