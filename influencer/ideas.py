@@ -19,7 +19,7 @@ def _pillars(persona: dict) -> list[tuple[str, str]]:
     return out or [("lifestyle", "")]
 
 
-def _prompt(kind, persona, cfg, avoid, brand, topic, n_scenes, pillar) -> str:
+def _prompt(kind, persona, cfg, avoid, brand, topic, n_scenes, pillar, inspiration=None) -> str:
     words = cfg["video"].get("voice_words", 48)
     persona_view = {k: persona.get(k) for k in ("name", "age", "city", "niche", "tone")}
     lines = [
@@ -30,6 +30,10 @@ def _prompt(kind, persona, cfg, avoid, brand, topic, n_scenes, pillar) -> str:
     ]
     if topic:
         lines.append(f"TOPIC (given by user, use it): {topic}")
+    if inspiration:
+        lines.append("INSPIRATION (analysis of another creator's reel; copy only its STRUCTURE, pacing and energy. "
+                     "Write a completely ORIGINAL script, different wording, never reuse their lines, "
+                     "do not copy their identity or claims): " + inspiration)
     lines += [
         "",
         "Return ONE JSON object with keys: topic, hook, voiceover, scenes, caption, hashtags.",
@@ -171,7 +175,8 @@ def _fallback(kind, persona, n_scenes, brand, pillar, topic) -> dict:
 
 
 def make_plan(kind: str, persona: dict, cfg: dict, history: list[dict],
-              brand: dict | None = None, topic: str | None = None, offline: bool = False) -> dict:
+              brand: dict | None = None, topic: str | None = None, offline: bool = False,
+              inspiration: str | None = None) -> dict:
     n_scenes = 1 if kind == "photo" else int(cfg["video"].get("scenes", 5))
     pillar = random.choice(_pillars(persona))
     ideas_cfg = cfg.get("ideas") if isinstance(cfg.get("ideas"), dict) else {}
@@ -180,7 +185,7 @@ def make_plan(kind: str, persona: dict, cfg: dict, history: list[dict],
     reason = ""
     if not offline:
         try:
-            raw = gemini_json(_prompt(kind, persona, cfg, avoid, brand, topic, n_scenes, pillar))
+            raw = gemini_json(_prompt(kind, persona, cfg, avoid, brand, topic, n_scenes, pillar, inspiration))
             return _normalize(raw, kind, n_scenes, persona, brand)
         except Exception as e:  # noqa: BLE001 - kuch bhi galat ho to video phir bhi bane
             reason = f"{type(e).__name__}: {e}"
