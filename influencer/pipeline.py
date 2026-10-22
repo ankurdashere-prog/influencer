@@ -55,7 +55,7 @@ def run(kind: str, brand_path: str | Path | None = None, post: bool = False, dem
     if ref_url and kind == "reel" and not demo:
         inspiration = reference.inspiration_from_url(ref_url, _say)  # fail ho to saaf error, bekaar reel nahi banegi
     _say("Idea aur script bana raha hu...")
-    plan = ideas.make_plan(kind, who, cfg, load_history(), brand, topic, offline=demo or not env("GEMINI_API_KEY"),
+    plan = ideas.make_plan(kind, who, cfg, load_history(), brand, topic, offline=demo or not (env("GEMINI_API_KEY") or env("OPENAI_API_KEY")),
                            inspiration=inspiration)
     work = OUTPUT_DIR / f"{stamp}_{kind}_{_slug(plan['topic'])}"
     work.mkdir(parents=True, exist_ok=True)
