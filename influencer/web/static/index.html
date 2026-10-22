@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Influencer Studio</title>
+<style>
+  :root{--bg:#f6f5f2;--card:#fff;--ink:#1d1c1a;--mute:#6b6862;--line:#e4e1da;--accent:#c2410c;--accent-ink:#fff;--ok:#15803d;--bad:#b91c1c;--soft:#fdf0e8}
+  @media (prefers-color-scheme:dark){:root{--bg:#161513;--card:#201f1c;--ink:#f1efea;--mute:#a09c93;--line:#35332e;--accent:#f97316;--accent-ink:#1a1008;--ok:#4ade80;--bad:#f87171;--soft:#2b2119}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:18px 16px 0;max-width:980px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 2px}
+  .sub{color:var(--mute);font-size:13px}
+  nav{display:flex;gap:4px;padding:12px 16px 0;max-width:980px;margin:0 auto;overflow-x:auto}
+  nav button{border:0;background:none;color:var(--mute);padding:10px 14px;font:inherit;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+  nav button.on{color:var(--ink);border-color:var(--accent)}
+  main{max-width:980px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  h2{font-size:16px;margin:0 0 10px}
+  label{display:block;font-weight:600;font-size:13px;margin:12px 0 4px}
+  input[type=text],select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+  textarea{font-family:ui-monospace,Consolas,monospace;font-size:13px;min-height:260px}
+  button.btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}
+  button.btn.alt{background:none;color:var(--ink);border:1px solid var(--line)}
+  button.btn.danger{background:none;color:var(--bad);border:1px solid var(--line)}
+  button.btn:disabled{opacity:.5;cursor:not-allowed}
+  .seg{display:flex;gap:8px;flex-wrap:wrap}
+  .seg label{margin:0;font-weight:600;border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;background:var(--bg)}
+  .seg input{display:none}
+  .seg input:checked+span{color:var(--accent)}
+  .seg label:has(input:checked){border-color:var(--accent);background:var(--soft)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font:13px/1.6 ui-monospace,Consolas,monospace;max-height:200px;overflow:auto;margin-top:12px;white-space:pre-wrap}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+  .item video,.item img.p{width:100%;aspect-ratio:9/16;object-fit:cover;border-radius:8px;background:#000;display:block}
+  .item img.p.photo{aspect-ratio:4/5}
+  .badge{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mute)}
+  .badge.ok{color:var(--ok);border-color:var(--ok)}
+  .badge.demo{color:var(--bad);border-color:var(--bad)}
+  .cap{font-size:13px;color:var(--mute);white-space:pre-wrap;max-height:90px;overflow:auto;margin:8px 0}
+  .chk{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}
+  .chk:last-child{border:0}
+  .dot{width:10px;height:10px;border-radius:50%;margin-top:6px;flex:none;background:var(--bad)}
+  .dot.ok{background:var(--ok)}
+  .mute{color:var(--mute);font-size:13px}
+  .ref{width:150px;aspect-ratio:2/3;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+  .cand{cursor:pointer;border:2px solid transparent;border-radius:10px;overflow:hidden}
+  .cand img{width:100%;display:block}
+  .cand:hover{border-color:var(--accent)}
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
+  .toast.show{opacity:1}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Influencer Studio</h1>
+  <div class="sub" id="who">Reel, photo aur client ads ek jagah se</div>
+</header>
+<nav id="tabs">
+  <button data-t="create" class="on">Create</button>
+  <button data-t="library">Library</button>
+  <button data-t="character">Character</button>
+  <button data-t="settings">Settings</button>
+</nav>
+<main>
+
+<section id="t-create">
+  <div class="card">
+    <h2>Naya content banao</h2>
+    <div class="seg" id="kind">
+      <label><input type="radio" name="kind" value="reel" checked><span>Reel (video)</span></label>
+      <label><input type="radio" name="kind" value="photo"><span>Photo post</span></label>
+      <label><input type="radio" name="kind" value="ad"><span>Client Ad</span></label>
+    </div>
+    <div id="brandBox" class="hide">
+      <label for="brand">Brand (client)</label>
+      <select id="brand"></select>
+    </div>
+    <label for="topic">Topic (khaali chhodo to AI khud sochega)</label>
+    <input type="text" id="topic" maxlength="200" placeholder="jaise: Diwali ke liye budget outfit">
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center;margin-top:14px">
+      <input type="checkbox" id="demo"> Test mode (bina API kharch ke, placeholder images aur khamosh voice)
+    </label>
+    <div class="row">
+      <button class="btn" id="go">Generate</button>
+      <span class="mute" id="todayHint"></span>
+    </div>
+    <div class="log hide" id="log"></div>
+    <div class="row hide" id="doneRow">
+      <button class="btn alt" id="toLib">Library mein dekho</button>
+    </div>
+  </div>
+  <div class="card mute">Generate karne par content sirf <b>Library</b> mein save hota hai. Instagram par tabhi jaata hai jab aap wahan "Post" dabate ho (ya roz ki automation chale).</div>
+</section>
+
+<section id="t-library" class="hide">
+  <div class="row" style="margin:0 0 12px"><button class="btn alt" id="refresh">Refresh</button></div>
+  <div class="grid" id="items"></div>
+  <div class="card mute hide" id="emptyLib">Abhi kuch nahi bana. Create tab se shuru karo.</div>
+</section>
+
+<section id="t-character" class="hide">
+  <div class="card">
+    <h2>Current chehra (reference)</h2>
+    <div class="row" style="margin-top:0;align-items:flex-start">
+      <img id="refImg" class="ref hide" alt="reference">
+      <div>
+        <div id="refMsg" class="mute"></div>
+        <p class="mute" style="max-width:520px">Har post isi chehre se banti hai. Neeche naye chehre generate karo ya apni image upload karo. Kisi real insaan ya celebrity ki photo mat lagana.</p>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Naye chehre generate karo</h2>
+    <div class="row" style="margin-top:0">
+      <button class="btn" id="genCand">4 chehre banao</button>
+      <label style="margin:0;font-weight:500;display:flex;gap:6px;align-items:center"><input type="checkbox" id="candDemo"> test mode</label>
+    </div>
+    <div class="log hide" id="candLog"></div>
+    <div class="grid" id="cands" style="margin-top:14px"></div>
+  </div>
+  <div class="card">
+    <h2>Ya apni (AI-generated) image upload karo</h2>
+    <input type="file" id="upl" accept="image/*">
+    <div class="row"><button class="btn alt" id="uplBtn">Reference banao</button></div>
+  </div>
+</section>
+
+<section id="t-settings" class="hide">
+  <div class="card"><h2>Setup status</h2><div id="checks"></div>
+    <p class="mute">Keys yahan nahi daalte. Hugging Face Space ke Settings, Secrets mein daalte hain (guide mein steps hain).</p></div>
+  <div class="card"><h2>Character profile (persona.yaml)</h2>
+    <textarea id="personaTxt" spellcheck="false"></textarea>
+    <div class="row"><button class="btn" data-save="persona">Save</button></div></div>
+  <div class="card"><h2>Haftawar plan aur video settings (settings.yaml)</h2>
+    <textarea id="settingsTxt" spellcheck="false"></textarea>
+    <div class="row"><button class="btn" data-save="settings">Save</button></div></div>
+  <div class="card"><h2>Client brands</h2>
+    <div id="brands"></div>
+    <div class="row"><input type="text" id="newBrand" placeholder="naya brand naam (jaise glownest)" style="max-width:280px"><button class="btn alt" id="addBrand">Brand add karo</button></div></div>
+</section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function el(tag,attrs={},...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!==false&&v!=null)e.setAttribute(k,v===true?'':v)}for(const c of kids.flat())e.append(c&&c.nodeType?c:document.createTextNode(c??''));return e}
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}
+async function api(path,opt={}){
+  const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});
+  if(!r.ok){let m=r.statusText;try{const j=await r.json();m=j.detail||j.error||m}catch{}throw new Error(m)}
+  return r.json()
+}
+const post=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
+
+// tabs
+function show(t){$$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));$$('main>section').forEach(s=>s.classList.toggle('hide',s.id!=='t-'+t));
+  if(t==='library')loadItems(); if(t==='character')loadCharacter(); if(t==='settings')loadSettings(); if(t==='create')loadCreate();}
+$$('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+
+// job polling
+async function runJob(jobId,logEl){
+  logEl.classList.remove('hide');
+  for(;;){
+    const j=await api('/api/jobs/'+jobId);
+    logEl.textContent=j.log.join('\n')||'Queue mein hai...';
+    logEl.scrollTop=logEl.scrollHeight;
+    if(j.status==='done')return j;
+    if(j.status==='error')throw new Error(j.error||'Kuch galat hua');
+    await new Promise(r=>setTimeout(r,1500));
+  }
+}
+
+// create
+async function loadCreate(){
+  const [st,br]=await Promise.all([api('/api/status'),api('/api/brands')]);
+  $('#todayHint').textContent='Aaj ka auto plan: '+st.today.plan;
+  const sel=$('#brand');sel.replaceChildren(...br.map(b=>el('option',{value:b.name},b.name)));
+  if(!br.length)sel.append(el('option',{value:''},'(pehle Settings mein brand banao)'));
+}
+$$('input[name=kind]').forEach(r=>r.onchange=()=>$('#brandBox').classList.toggle('hide',$('input[name=kind]:checked').value!=='ad'));
+$('#go').onclick=async()=>{
+  const kind=$('input[name=kind]:checked').value;
+  const btn=$('#go');btn.disabled=true;$('#doneRow').classList.add('hide');
+  try{
+    const {job}=await post('/api/generate',{kind,topic:$('#topic').value,brand:$('#brand').value,demo:$('#demo').checked});
+    await runJob(job,$('#log'));
+    toast('Ban gaya. Library mein dekho.');$('#doneRow').classList.remove('hide');
+  }catch(e){toast('Error: '+e.message);$('#log').classList.remove('hide');$('#log').append('\n'+e.message)}
+  btn.disabled=false;
+};
+$('#toLib').onclick=()=>show('library');
+
+// library
+async function loadItems(){
+  const items=await api('/api/items');const box=$('#items');box.replaceChildren();
+  $('#emptyLib').classList.toggle('hide',items.length>0);
+  for(const it of items){
+    const isPhoto=it.kind==='photo';
+    const media=isPhoto?el('img',{class:'p photo',src:it.url,loading:'lazy'}):el('video',{src:it.url,poster:it.poster,controls:true,preload:'none',playsinline:true});
+    const badges=[el('span',{class:'badge'},it.kind.toUpperCase())];
+    if(it.posted)badges.push(el('span',{class:'badge ok'},'Posted'));else badges.push(el('span',{class:'badge'},'Draft'));
+    if(it.demo)badges.push(el('span',{class:'badge demo'},'Demo'));
+    const pb=el('button',{class:'btn',disabled:it.posted||it.demo,onclick:()=>postItem(it,pb)},it.posted?'Post ho chuki':'Instagram par post karo');
+    box.append(el('div',{class:'card item'},media,
+      el('div',{class:'row',style:'margin:10px 0 0'},...badges),
+      el('div',{style:'font-weight:700;margin-top:6px'},it.topic),
+      el('div',{class:'cap'},it.caption),
+      el('div',{class:'row',style:'margin-top:6px'},pb,
+        el('a',{class:'btn alt',href:it.url,download:it.file,style:'text-decoration:none'},'Download'),
+        el('button',{class:'btn danger',onclick:()=>delItem(it)},'Delete'))));
+  }
+}
+async function postItem(it,btn){
+  if(!confirm('Ye Instagram par live post ho jayegi. Pakka?'))return;
+  btn.disabled=true;btn.textContent='Post ho rahi hai...';
+  try{const {job}=await post(`/api/items/${encodeURIComponent(it.dir)}/post`);
+    const lg=el('div',{class:'log'});btn.parentElement.after(lg);await runJob(job,lg);toast('Instagram par post ho gayi!');loadItems()}
+  catch(e){toast('Error: '+e.message);btn.disabled=false;btn.textContent='Instagram par post karo'}
+}
+async function delItem(it){if(!confirm('Delete karein?'))return;await api('/api/items/'+encodeURIComponent(it.dir),{method:'DELETE'});loadItems()}
+$('#refresh').onclick=loadItems;
+
+// character
+async function loadCharacter(){
+  const c=await api('/api/character');
+  const img=$('#refImg');
+  if(c.reference){img.src='/character-files/reference.png?'+c.ref_mtime;img.classList.remove('hide');$('#refMsg').textContent='Reference set hai.'}
+  else{img.classList.add('hide');$('#refMsg').textContent='Reference abhi set nahi hai. Neeche se chehra chuno.'}
+  const g=$('#cands');g.replaceChildren(...c.candidates.map(n=>el('div',{class:'cand',title:'Isse chuno',onclick:()=>selectCand(n)},el('img',{src:'/character-files/candidates/'+n,loading:'lazy'}))));
+}
+async function selectCand(n){if(!confirm('Ye chehra reference banayein?'))return;await post('/api/character/select',{name:n});toast('Reference set ho gaya');loadCharacter()}
+$('#genCand').onclick=async()=>{const b=$('#genCand');b.disabled=true;
+  try{const {job}=await post('/api/character/candidates',{n:4,demo:$('#candDemo').checked});await runJob(job,$('#candLog'));loadCharacter()}
+  catch(e){toast('Error: '+e.message)}b.disabled=false};
+$('#uplBtn').onclick=async()=>{const f=$('#upl').files[0];if(!f)return toast('Pehle image chuno');
+  const fd=new FormData();fd.append('file',f);
+  const r=await fetch('/api/character/upload',{method:'POST',body:fd});
+  if(!r.ok){const j=await r.json().catch(()=>({}));return toast('Error: '+(j.detail||r.statusText))}
+  toast('Reference set ho gaya');loadCharacter()};
+
+// settings
+async function loadSettings(){
+  const [st,p,s,br]=await Promise.all([api('/api/status'),api('/api/config/persona'),api('/api/config/settings'),api('/api/brands')]);
+  $('#checks').replaceChildren(...st.checks.map(c=>el('div',{class:'chk'},el('span',{class:'dot'+(c.ok?' ok':'')}),el('div',{},el('b',{},c.name),c.ok?'':el('div',{class:'mute'},c.hint)))));
+  if(!st.persist)$('#checks').append(el('div',{class:'mute',style:'margin-top:8px'},'Note: Supabase set nahi hai, isliye server restart hone par character aur edits reset ho sakte hain.'));
+  $('#personaTxt').value=p.text;$('#settingsTxt').value=s.text;
+  $('#brands').replaceChildren(...br.map(b=>{const ta=el('textarea',{spellcheck:'false',style:'min-height:200px'});ta.value=b.text;
+    return el('div',{style:'margin-bottom:16px'},el('b',{},b.name),ta,el('div',{class:'row',style:'margin-top:8px'},
+      el('button',{class:'btn',onclick:()=>saveBrand(b.name,ta.value)},'Save'),
+      el('button',{class:'btn danger',onclick:()=>delBrand(b.name)},'Delete')))}));
+}
+$$('[data-save]').forEach(b=>b.onclick=async()=>{const w=b.dataset.save;
+  try{await api('/api/config/'+w,{method:'PUT',body:JSON.stringify({text:$(w==='persona'?'#personaTxt':'#settingsTxt').value})});toast('Save ho gaya')}catch(e){toast(e.message)}});
+async function saveBrand(n,t){try{await api('/api/brands/'+n,{method:'PUT',body:JSON.stringify({text:t})});toast('Brand save ho gaya')}catch(e){toast(e.message)}}
+async function delBrand(n){if(!confirm(n+' delete karein?'))return;await api('/api/brands/'+n,{method:'DELETE'});loadSettings()}
+$('#addBrand').onclick=async()=>{const n=$('#newBrand').value.trim().toLowerCase();
+  const tpl='active: true\nname: Brand Name\nproduct: Product ka naam\naudience: kaun log\nusp:\n  - pehla fayda\noffer: ""\ncta: "Link bio mein hai"\ntone: friendly, honest recommendation\ndo_not_say:\n  - "100% guaranteed"\nimage_style: bright natural light, product visible in hand\n';
+  try{await api('/api/brands/'+n,{method:'PUT',body:JSON.stringify({text:tpl})});$('#newBrand').value='';loadSettings()}catch(e){toast(e.message)}};
+
+loadCreate();
+</script>
+</body>
+</html>
