@@ -1,0 +1,17 @@
+Client ke ad ke liye brief. Har client ki alag file banao (brands/clientname.yaml).
+Tool sirf yahi facts use karega. Koi naya discount ya claim khud nahi banayega.
+# active: true
+# name: GlowNest
+# product: Vitamin C face serum
+# audience: 18-30 saal ki ladkiyan, metro aur tier-2 cities
+# usp:
+  # - Halka, non-sticky formula
+  # - Roz subah lagane ke liye
+# offer: "Pehle order par free shipping"
+# cta: "Link bio mein hai, check karo"
+# tone: friendly, honest recommendation
+# do_not_say:
+  # - "100% guaranteed"
+  # - "pimples gayab"
+  # - "koi medical claim"
+# image_style: bright bathroom or vanity setup, product visible in hand, natural morning light
