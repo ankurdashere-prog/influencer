@@ -80,6 +80,8 @@
     </div>
     <label for="topic">Topic (khaali chhodo to AI khud sochega)</label>
     <input type="text" id="topic" maxlength="200" placeholder="jaise: Diwali ke liye budget outfit">
+    <label for="refurl">Reference reel link (optional, sirf Reel ke liye: style seekhkar nayi original reel banegi)</label>
+    <input type="text" id="refurl" maxlength="300" placeholder="https://www.instagram.com/reel/...">
     <label style="font-weight:500;display:flex;gap:8px;align-items:center;margin-top:14px">
       <input type="checkbox" id="demo"> Test mode (bina API kharch ke, placeholder images aur khamosh voice)
     </label>
@@ -185,7 +187,7 @@ $('#go').onclick=async()=>{
   const kind=$('input[name=kind]:checked').value;
   const btn=$('#go');btn.disabled=true;$('#doneRow').classList.add('hide');
   try{
-    const {job}=await post('/api/generate',{kind,topic:$('#topic').value,brand:$('#brand').value,demo:$('#demo').checked});
+    const {job}=await post('/api/generate',{kind,topic:$('#topic').value,ref_url:$('#refurl').value,brand:$('#brand').value,demo:$('#demo').checked});
     await runJob(job,$('#log'));
     toast('Ban gaya. Library mein dekho.');$('#doneRow').classList.remove('hide');
   }catch(e){toast('Error: '+e.message);$('#log').classList.remove('hide');$('#log').append('\n'+e.message)}
