@@ -54,8 +54,8 @@ def download(url: str, out_dir: Path) -> Path:
 def shrink(src: Path, dst: Path, max_seconds: int = 60) -> Path:
     if media_duration(src) > max_seconds + 5:
         raise ReferenceError(f"Video {max_seconds}s se lamba hai.")
-    run_ff(["-i", str(src), "-t", str(max_seconds), "-vf", "scale=360:-2,fps=12", "-c:v", "libx264",
-            "-preset", "veryfast", "-crf", "32", "-c:a", "aac", "-b:a", "48k", "-ac", "1", str(dst)])
+    run_ff(["-i", str(src), "-t", str(max_seconds), "-vf", "scale=320:-2,fps=8", "-c:v", "libx264",
+            "-preset", "veryfast", "-crf", "34", "-c:a", "aac", "-b:a", "48k", "-ac", "1", str(dst)])
     if dst.stat().st_size > 14 * 1024 * 1024:
         raise ReferenceError("Video compress hone ke baad bhi bahut bada hai.")
     return dst
