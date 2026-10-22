@@ -19,6 +19,10 @@ video:
   tail_seconds: 0.6
   talking_seconds: 8        # shuru ke itne second chehra bolega (lip-sync). Kam = sasta. Env: TALKING_PROVIDER=fal chahiye
   music_volume: 0.12
+  clip_trim_head: 0.15
+  clip_trim_tail: 0.2
+  punch_zoom: 1.08        # 1.0 = zoom band
+  normalize_audio: true
   caption:
     font: Arial
     size: 84
