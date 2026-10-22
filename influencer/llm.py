@@ -33,20 +33,38 @@ def _coerce(data):
     return data
 
 
+def model_candidates() -> list[str]:
+    """GEMINI_MODEL pehle, phir naye default. Google purane model band kar deta hai (404)."""
+    out = []
+    for m in (env("GEMINI_MODEL"), "gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash"):
+        if m and m not in out:
+            out.append(m)
+    return out
+
+
+def _is_gone(r) -> bool:
+    return r.status_code == 404 and "model" in r.text.lower()
+
+
 def gemini_json(prompt: str) -> dict:
     """Gemini free-tier se JSON jawab leta hai. Key header mein jaati hai (URL mein nahi)."""
     key = env("GEMINI_API_KEY")
     if not key:
         raise LLMError("GEMINI_API_KEY set nahi hai")
-    model = env("GEMINI_MODEL", "gemini-2.5-flash")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.95},
     }
     last = ""
-    for attempt in range(4):
+    models = model_candidates()
+    mi = 0
+    for attempt in range(4 + len(models)):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{models[mi]}:generateContent"
         r = requests.post(url, headers={"x-goog-api-key": key}, json=body, timeout=90)
+        if _is_gone(r) and mi + 1 < len(models):
+            last = f"{models[mi]} band hai, agla try kar raha hu"
+            mi += 1
+            continue
         if r.status_code in (429, 500, 502, 503):
             last = f"{r.status_code} {r.text[:200]}"
             time.sleep(2 ** attempt * 2)
