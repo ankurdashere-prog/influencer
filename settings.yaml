@@ -17,6 +17,7 @@ video:
   scenes: 5                 # ek reel mein kitni images (cost control: kam = sasta)
   voice_words: 48           # lagbhag 18-20 second ka voiceover
   tail_seconds: 0.6
+  talking_seconds: 8        # shuru ke itne second chehra bolega (lip-sync). Kam = sasta. Env: TALKING_PROVIDER=fal chahiye
   music_volume: 0.12
   caption:
     font: Arial
