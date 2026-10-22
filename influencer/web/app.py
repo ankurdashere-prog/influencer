@@ -228,9 +228,10 @@ async def clips_script(request: Request):
 async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form("[]"),
                       topic: str = Form("Clip Studio reel"), caption: str = Form(""), music: str = Form("1"),
                       speed: str = Form("1.1"), music_volume: str = Form("0.12"),
-                
+                      hook_text: str = Form(""), end_text: str = Form(""),
                       music_file: UploadFile | None = File(None)):
-                                                hook_text: str = Form(""), end_text: str = Form(""),
+
+
     if not clips or len(clips) > 12:
         raise HTTPException(400, "1 se 12 clips chahiye")
     try:
