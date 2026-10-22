@@ -56,6 +56,8 @@ def run(kind: str, brand_path: str | Path | None = None, post: bool = False, dem
     work = OUTPUT_DIR / f"{stamp}_{kind}_{_slug(plan['topic'])}"
     work.mkdir(parents=True, exist_ok=True)
     (work / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    if plan.get("fallback_reason"):
+        _say(f"Gemini ka jawab use nahi ho paya ({plan['fallback_reason'][:160]}). Simple template use kiya.")
     _say(f"Topic: {plan['topic']}")
 
     provider = "placeholder" if demo else None
