@@ -14,11 +14,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .. import images, persist, pipeline
+from .. import clips as clipstudio, images, persist, pipeline
 from ..config import (IST, OUTPUT_DIR, REFERENCE_IMAGE, ROOT, env, load_history, now_ist)
 
 STATIC = Path(__file__).parent / "static"
@@ -207,6 +208,62 @@ def post_item(name: str):
 def delete_item(name: str):
     shutil.rmtree(_safe_dir(name), ignore_errors=True)
     return {"ok": True}
+
+
+
+
+
+
+
+# ---- clip studio (scene prompts -> aapke clips -> reel) ----
+@app.post("/api/clips/script")
+async def clips_script(request: Request):
+    body = await request.json() if request.headers.get("content-length") not in (None, "0") else {}
+    topic = (body.get("topic") or "").strip()[:200] or None
+    offline = not (env("GEMINI_API_KEY") or env("OPENAI_API_KEY"))
+    return await run_in_threadpool(clipstudio.make_scene_script, topic, pipeline.persona(), clipstudio.N_SCENES, offline)
+
+
+@app.post("/api/clips/merge")
+async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form("[]"),
+                      topic: str = Form("Clip Studio reel"), caption: str = Form(""), music: str = Form("1")):
+    if not clips or len(clips) > 12:
+        raise HTTPException(400, "1 se 12 clips chahiye")
+    try:
+        dlg = [str(x) for x in json.loads(dialogues)]
+    except (json.JSONDecodeError, TypeError):
+        dlg = []
+    work = clipstudio.new_work_dir(topic)
+    paths = []
+    for i, f in enumerate(clips):
+        data = await f.read()
+        if len(data) > 80_000_000:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, f"Clip {i + 1} 80 MB se badi hai")
+        if len(data) < 1000:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, f"Clip {i + 1} khaali ya kharab hai")
+        p = work / f"in_{i}.mp4"
+        p.write_bytes(data)
+        paths.append(p)
+    cfg = pipeline.settings()["video"]
+    mus = clipstudio.pick_music(ROOT) if music == "1" else None
+
+    def work_fn():
+        final = clipstudio.merge(paths, dlg, work, cfg, mus, say=pipeline._say)
+        for q in paths:
+            q.unlink(missing_ok=True)
+        res = clipstudio.save_item(work, topic[:80], caption or topic, final)
+        pipeline._say("Reel tayyar. Library mein dekho.")
+        return res
+
+    return {"job": submit("clips", work_fn)}
+
+
+
+
+
+
 
 
 # ---- character ----
