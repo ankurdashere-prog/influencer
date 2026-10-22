@@ -46,7 +46,7 @@ def _is_gone(r) -> bool:
     return r.status_code == 404 and "model" in r.text.lower()
 
 
-def gemini_json(prompt: str) -> dict:
+def _gemini_json(prompt: str) -> dict:
     """Gemini free-tier se JSON jawab leta hai. Key header mein jaati hai (URL mein nahi)."""
     key = env("GEMINI_API_KEY")
     if not key:
@@ -78,3 +78,51 @@ def gemini_json(prompt: str) -> dict:
             last = f"galat response: {e}"
             time.sleep(2)
     raise LLMError(f"Gemini fail hua: {last}")
+
+
+def openai_json(prompt: str, images: list[str] | None = None) -> dict:
+    """OpenAI se JSON jawab (Gemini ka backup). images = data:image/jpeg;base64,... URLs."""
+    key = env("OPENAI_API_KEY")
+    if not key:
+        raise LLMError("OPENAI_API_KEY set nahi hai")
+    model = env("OPENAI_TEXT_MODEL", "gpt-4.1-mini")
+    content: list = [{"type": "text", "text": prompt + "\nReturn ONLY one JSON object."}]
+    for u in images or []:
+        content.append({"type": "image_url", "image_url": {"url": u}})
+    body = {"model": model, "messages": [{"role": "user", "content": content}],
+            "response_format": {"type": "json_object"}, "temperature": 0.9}
+    last = ""
+    for attempt in range(3):
+        try:
+            r = requests.post("https://api.openai.com/v1/chat/completions",
+                              headers={"Authorization": f"Bearer {key}"}, json=body, timeout=120)
+        except requests.RequestException as e:
+            last = type(e).__name__
+            time.sleep(3)
+            continue
+        if r.status_code in (429, 500, 502, 503):
+            last = f"{r.status_code} {r.text[:150]}"
+            time.sleep(3 * (attempt + 1))
+            continue
+        if not r.ok:
+            raise LLMError(f"OpenAI {r.status_code}: {r.text[:300]}")
+        try:
+            return _coerce(json.loads(r.json()["choices"][0]["message"]["content"]))
+        except (KeyError, IndexError, json.JSONDecodeError, LLMError) as e:
+            last = f"galat response: {e}"
+    raise LLMError(f"OpenAI fail hua: {last}")
+
+
+def gemini_json(prompt: str) -> dict:
+    """Pehle Gemini; fail ho (busy/band/timeout) to OpenAI (agar key ho). LLM_PROVIDER=openai se OpenAI pehle."""
+    order = [_gemini_json, openai_json]
+    if env("LLM_PROVIDER").lower() == "openai":
+        order.reverse()
+    errs = []
+    for fn in order:
+        try:
+            return fn(prompt)
+        except Exception as e:  # noqa: BLE001
+            errs.append(f"{fn.__name__}: {e}")
+            print(f"[llm] {fn.__name__} nahi chala: {str(e)[:150]}")
+    raise LLMError(" | ".join(errs)[:600])
