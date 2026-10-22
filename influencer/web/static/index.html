@@ -218,6 +218,47 @@ $('#go').onclick=async()=>{
 };
 $('#toLib').onclick=()=>show('library');
 
+
+
+// clip studio
+let studio=null;
+$('#stScript').onclick=async()=>{const b=$('#stScript');b.disabled=true;
+  try{studio=await post('/api/clips/script',{topic:$('#stTopic').value});renderStudio();if(studio.note)toast(studio.note)}
+  catch(e){toast('Error: '+e.message)}b.disabled=false};
+function renderStudio(){
+  const box=$('#stScenes');box.replaceChildren();
+  studio.scenes.forEach((s,i)=>{
+    const ta=el('textarea',{spellcheck:'false',style:'min-height:150px'});ta.value=s.prompt;
+    box.append(el('div',{class:'card'},el('b',{},'Scene '+(i+1)),ta,
+      el('div',{class:'row'},el('button',{class:'btn alt',onclick:async()=>{try{await navigator.clipboard.writeText(ta.value);toast('Copy ho gaya')}catch{ta.select();toast('Select ho gaya, Ctrl+C dabao')}}},'Prompt copy karo')),
+      el('label',{},'Caption text (jo bola jayega)'),el('input',{type:'text',id:'dlg'+i,value:s.dialogue}),
+      el('label',{},'Is scene ka clip (video file)'),el('input',{type:'file',accept:'video/*',id:'clip'+i})));
+  });
+  $('#stMerge').classList.remove('hide');
+}
+$('#stGo').onclick=async()=>{
+  const fd=new FormData(),dl=[];
+  studio.scenes.forEach((s,i)=>{const f=$('#clip'+i).files[0];if(f){fd.append('clips',f);dl.push($('#dlg'+i).value)}});
+  if(!dl.length)return toast('Kam se kam ek clip upload karo');
+  fd.append('dialogues',JSON.stringify(dl));fd.append('topic',studio.topic);fd.append('caption',studio.caption);
+  fd.append('music',$('#stMusic').checked?'1':'0');
+  const b=$('#stGo');b.disabled=true;
+  try{const r=await fetch('/api/clips/merge',{method:'POST',body:fd});
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||r.statusText)}
+    const {job}=await r.json();await runJob(job,$('#stLog'));toast('Reel ban gayi. Library mein dekho.');}
+  catch(e){toast('Error: '+e.message)}b.disabled=false;
+};
+
+
+
+
+
+
+
+
+
+
+  
 // library
 async function loadItems(){
   const items=await api('/api/items');const box=$('#items');box.replaceChildren();
