@@ -16,7 +16,7 @@ from pathlib import Path
 import requests
 
 from .config import env
-from .llm import LLMError, _coerce
+from .llm import LLMError, _coerce, _is_gone, model_candidates
 from .video import media_duration, run_ff
 
 URL_RE = re.compile(r"^https?://(www\.)?(instagram\.com|youtube\.com|youtu\.be)/\S+$", re.I)
@@ -63,13 +63,15 @@ def analyze_video(path: Path, session=requests) -> dict:
     key = env("GEMINI_API_KEY")
     if not key:
         raise LLMError("GEMINI_API_KEY set nahi hai")
-    model = env("GEMINI_MODEL", "gemini-2.5-flash")
     body = {"contents": [{"parts": [
         {"inline_data": {"mime_type": "video/mp4", "data": base64.b64encode(path.read_bytes()).decode()}},
         {"text": ANALYZE_PROMPT}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.3}}
-    r = session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                     headers={"x-goog-api-key": key}, json=body, timeout=180)
+    for model in model_candidates():
+        r = session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                         headers={"x-goog-api-key": key}, json=body, timeout=180)
+        if not _is_gone(r):
+            break
     if not r.ok:
         raise LLMError(f"Gemini video analysis {r.status_code}: {r.text[:300]}")
     try:
