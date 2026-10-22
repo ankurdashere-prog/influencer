@@ -1,0 +1,10 @@
+requests>=2.31
+edge-tts>=6.1.12
+gTTS>=2.5
+pyyaml>=6.0
+pillow>=10.0
+python-dotenv>=1.0
+imageio-ffmpeg>=0.5
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9

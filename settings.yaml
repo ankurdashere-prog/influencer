@@ -1,0 +1,29 @@
+# Haftawar plan (IST). Values: reel | photo | ad
+# ad = brands/ folder ke active brief ko baari-baari se use karta hai, par kabhi auto-post nahi hota
+# (client approval ke liye output/ mein rendered video rehta hai).
+weekly_plan:
+  mon: reel
+  tue: photo
+  wed: reel
+  thu: photo
+  fri: reel
+  sat: reel
+  sun: photo
+
+video:
+  width: 1080
+  height: 1920
+  fps: 30
+  scenes: 5                 # ek reel mein kitni images (cost control: kam = sasta)
+  voice_words: 48           # lagbhag 18-20 second ka voiceover
+  tail_seconds: 0.6
+  music_volume: 0.12
+  caption:
+    font: Arial
+    size: 84
+    margin_bottom: 460
+    words_per_group: 3
+    highlight: yellow        # current bola ja raha word
+
+ideas:
+  history_to_avoid: 30       # pichhle kitne topics repeat nahi karne
