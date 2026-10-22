@@ -60,6 +60,7 @@
 </header>
 <nav id="tabs">
   <button data-t="create" class="on">Create</button>
+   <button data-t="studio">Clip Studio</button>
   <button data-t="library">Library</button>
   <button data-t="character">Character</button>
   <button data-t="settings">Settings</button>
@@ -96,6 +97,28 @@
   </div>
   <div class="card mute">Generate karne par content sirf <b>Library</b> mein save hota hai. Instagram par tabhi jaata hai jab aap wahan "Post" dabate ho (ya roz ki automation chale).</div>
 </section>
+
+
+
+
+
+  <section id="t-studio" class="hide">
+  <div class="card">
+    <h2>Clip Studio (test)</h2>
+    <p class="mute">1) Script aur scene-wise prompts banao. 2) Har prompt apne video tool (jaise Flow) mein avatar image ke saath paste karke 4 second ka clip banao. 3) Clips yahan upload karo, hum jodkar captions aur music ke saath reel bana denge.</p>
+    <p><a href="/character-files/reference.png" download="avatar.png">Avatar image download karo</a> <span class="mute">(video tool mein upload karne ke liye; Character tab mein pehle chehra set karo)</span></p>
+    <label for="stTopic">Topic (khaali chhodo to AI sochega)</label>
+    <input type="text" id="stTopic" maxlength="200" placeholder="jaise: Morning routine tips">
+    <div class="row"><button class="btn" id="stScript">Script aur prompts banao</button></div>
+  </div>
+  <div id="stScenes"></div>
+  <div class="card hide" id="stMerge">
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="stMusic" checked> Halka background music (assets/music mein ho to)</label>
+    <div class="row"><button class="btn" id="stGo">Clips jodkar reel banao</button></div>
+    <div class="log hide" id="stLog"></div>
+  </div>
+</section>
+  
 
 <section id="t-library" class="hide">
   <div class="row" style="margin:0 0 12px"><button class="btn alt" id="refresh">Refresh</button></div>
