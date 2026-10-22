@@ -13,6 +13,14 @@ class StorageError(RuntimeError):
     pass
 
 
+def _auth(key: str) -> dict:
+    """Purani JWT key (eyJ...) ko Bearer bhi chahiye; nayi sb_secret_ key sirf apikey header se chalti hai."""
+    h = {"apikey": key}
+    if key.startswith("eyJ"):
+        h["Authorization"] = f"Bearer {key}"
+    return h
+
+
 def _cfg() -> tuple[str, str, str]:
     url, key, bucket = env("SUPABASE_URL").rstrip("/"), env("SUPABASE_SERVICE_KEY"), env("SUPABASE_BUCKET", "influencer-media")
     if not url or not key:
@@ -26,7 +34,7 @@ def upload_public(path: Path, name: str) -> str:
     with open(path, "rb") as f:
         r = requests.post(
             f"{url}/storage/v1/object/{bucket}/{name}",
-            headers={"Authorization": f"Bearer {key}", "apikey": key, "Content-Type": ctype, "x-upsert": "true"},
+            headers={**_auth(key), "Content-Type": ctype, "x-upsert": "true"},
             data=f, timeout=300,
         )
     if not r.ok:
@@ -40,7 +48,7 @@ def delete(name: str) -> None:
         url, key, bucket = _cfg()
         requests.delete(
             f"{url}/storage/v1/object/{bucket}/{name}",
-            headers={"Authorization": f"Bearer {key}", "apikey": key}, timeout=60,
+            headers={**_auth(key)}, timeout=60,
         )
     except Exception:
         pass
