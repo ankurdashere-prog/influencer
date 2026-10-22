@@ -12,6 +12,27 @@ class LLMError(RuntimeError):
     pass
 
 
+def _coerce(data):
+    """Gemini kabhi JSON ko string mein lapet deta hai (double-encoded) ya list mein. Dict nikalo."""
+    for _ in range(4):
+        if isinstance(data, str):
+            txt = data.strip()
+            if txt.startswith("```"):
+                txt = txt.strip("`").removeprefix("json").strip()
+            try:
+                data = json.loads(txt)
+                continue
+            except json.JSONDecodeError:
+                break
+        if isinstance(data, list):
+            data = next((d for d in data if isinstance(d, (dict, str))), None)
+            continue
+        break
+    if not isinstance(data, dict):
+        raise LLMError(f"Gemini ne dict nahi diya ({type(data).__name__})")
+    return data
+
+
 def gemini_json(prompt: str) -> dict:
     """Gemini free-tier se JSON jawab leta hai. Key header mein jaati hai (URL mein nahi)."""
     key = env("GEMINI_API_KEY")
@@ -34,8 +55,8 @@ def gemini_json(prompt: str) -> dict:
             raise LLMError(f"Gemini {r.status_code}: {r.text[:300]}")
         try:
             text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(text)
-        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            return _coerce(json.loads(text))
+        except (KeyError, IndexError, json.JSONDecodeError, LLMError) as e:
             last = f"galat response: {e}"
             time.sleep(2)
     raise LLMError(f"Gemini fail hua: {last}")
