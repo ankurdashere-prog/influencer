@@ -11,6 +11,14 @@ from .config import ROOT, env
 SEP = "__"
 
 
+def _auth(key: str) -> dict:
+    """Purani JWT key (eyJ...) ko Bearer bhi chahiye; nayi sb_secret_ key sirf apikey header se chalti hai."""
+    h = {"apikey": key}
+    if key.startswith("eyJ"):
+        h["Authorization"] = f"Bearer {key}"
+    return h
+
+
 def _cfg() -> tuple[str, str, str] | None:
     url, key = env("SUPABASE_URL").rstrip("/"), env("SUPABASE_SERVICE_KEY")
     if not url or not key:
@@ -34,7 +42,7 @@ def push(path: Path) -> None:
     try:
         requests.post(
             f"{url}/storage/v1/object/{bucket}/{_key(path)}",
-            headers={"Authorization": f"Bearer {key}", "apikey": key,
+            headers={**_auth(key),
                      "Content-Type": "application/octet-stream", "x-upsert": "true"},
             data=path.read_bytes(), timeout=60,
         )
@@ -49,7 +57,7 @@ def remove(path: Path) -> None:
     url, key, bucket = c
     try:
         requests.delete(f"{url}/storage/v1/object/{bucket}/{_key(path)}",
-                        headers={"Authorization": f"Bearer {key}", "apikey": key}, timeout=60)
+                        headers={**_auth(key)}, timeout=60)
     except requests.RequestException:
         pass
 
@@ -60,7 +68,7 @@ def pull() -> int:
     if not c:
         return 0
     url, key, bucket = c
-    h = {"Authorization": f"Bearer {key}", "apikey": key}
+    h = {**_auth(key)}
     n = 0
     try:
         r = requests.post(f"{url}/storage/v1/object/list/{bucket}", headers=h,
