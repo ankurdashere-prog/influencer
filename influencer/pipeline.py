@@ -6,7 +6,7 @@ import random
 import re
 from pathlib import Path
 
-from . import captions, ideas, images, publish, storage, tts
+from . import captions, ideas, images, publish, reference, storage, talking, tts
 from .config import (OUTPUT_DIR, REFERENCE_IMAGE, ROOT, add_history, env, load_history,
                      load_yaml, now_ist, persona, settings, update_history)
 from .video import assemble_reel
@@ -44,15 +44,19 @@ def next_brand() -> Path | None:
 
 
 def run(kind: str, brand_path: str | Path | None = None, post: bool = False, demo: bool = False,
-        topic: str | None = None, source: str = "manual") -> dict:
+        topic: str | None = None, source: str = "manual", ref_url: str | None = None) -> dict:
     cfg, who = settings(), persona()
     brand = load_brand(brand_path) if kind == "ad" else None
     if kind == "ad" and not brand:
         raise ValueError("Ad ke liye brand brief chuno (brands/ mein active brief rakho).")
 
     stamp = now_ist().strftime("%Y-%m-%d_%H%M%S")
+    inspiration = None
+    if ref_url and kind == "reel" and not demo:
+        inspiration = reference.inspiration_from_url(ref_url, _say)  # fail ho to saaf error, bekaar reel nahi banegi
     _say("Idea aur script bana raha hu...")
-    plan = ideas.make_plan(kind, who, cfg, load_history(), brand, topic, offline=demo or not env("GEMINI_API_KEY"))
+    plan = ideas.make_plan(kind, who, cfg, load_history(), brand, topic, offline=demo or not env("GEMINI_API_KEY"),
+                           inspiration=inspiration)
     work = OUTPUT_DIR / f"{stamp}_{kind}_{_slug(plan['topic'])}"
     work.mkdir(parents=True, exist_ok=True)
     (work / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -85,8 +89,12 @@ def run(kind: str, brand_path: str | Path | None = None, post: bool = False, dem
         music_dir = ROOT / "assets" / "music"
         tracks = [p for p in music_dir.glob("*") if p.suffix.lower() in (".mp3", ".m4a", ".wav")] if music_dir.exists() else []
         music = random.choice(tracks) if tracks else None
+        talk_clip, talk_dur = None, 0.0
+        if talking.enabled() and not demo:
+            talk_clip, talk_dur = _talking_head(who, plan, cfg, audio, words, dur, work, ref)
         _say("Video render ho rahi hai (1-3 minute)...")
-        final = assemble_reel(imgs, audio, ass, work / "reel.mp4", work, dur, cfg["video"], music)
+        final = assemble_reel(imgs, audio, ass, work / "reel.mp4", work, dur, cfg["video"], music,
+                              talking=talk_clip, talk_dur=talk_dur)
     _say("Video/photo tayyar.")
 
     result = {"dir": work.name, "kind": kind, "topic": plan["topic"], "file": final.name,
@@ -101,6 +109,26 @@ def run(kind: str, brand_path: str | Path | None = None, post: bool = False, dem
     else:
         _say("Post nahi kiya. Library mein review karke 'Post' dabao.")
     return result
+
+
+def _talking_head(who, plan, cfg, audio, words, dur, work, ref):
+    """Bolta chehra banata hai. Fail hone par (None, 0) deta hai, reel slideshow mode mein ban jaati hai."""
+    try:
+        want = float(cfg["video"].get("talking_seconds", 8))
+        cut = talking.pick_cut(words, dur, want)
+        face = work / "talking_face.png"
+        _say("Bolne wala chehra bana raha hu...")
+        images.generate(images.full_prompt(who, "close-up head and shoulders portrait facing the camera, mouth gently closed, "
+                                                 "soft natural smile, simple clean background, eyes looking at the lens"),
+                        face, seed=random.randint(1, 10**6), ref=ref)
+        clip_audio = talking.slice_audio(audio, work / "voice_talk.mp3", cut)
+        _say(f"Lip-sync video ban rahi hai ({cut:.0f}s, 2-8 minute lag sakte hain)...")
+        out = talking.generate(face, clip_audio, work / "talking.mp4", prompt=str(plan.get("hook", ""))[:200])
+        _say("Bolta video mil gaya.")
+        return out, cut
+    except Exception as e:
+        _say(f"Lip-sync nahi ho paya ({str(e)[:200]}). Slideshow mode mein bana raha hu.")
+        return None, 0.0
 
 
 def post_output(dirname: str) -> str:
