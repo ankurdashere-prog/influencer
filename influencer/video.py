@@ -59,13 +59,33 @@ def make_clip(image: Path, out: Path, dur: float, idx: int, w: int, h: int, fps:
             "-x264-params", "rc-lookahead=8:ref=2", "-pix_fmt", "yuv420p", str(out)])
 
 
+def make_talk_clip(src: Path, out: Path, dur: float, w: int, h: int, fps: int) -> None:
+    """Bolte video ko 9:16 mein fit karta hai (audio hata deta hai, asli voice baad mein judti hai)."""
+    vf = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,format=yuv420p"
+    run_ff(["-i", str(src), "-vf", vf, "-t", f"{dur:.2f}", "-r", str(fps), "-an",
+            "-threads", "1", "-filter_threads", "1", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-x264-params", "rc-lookahead=8:ref=2", "-pix_fmt", "yuv420p", str(out)])
+
+
 def assemble_reel(images: list[Path], audio: Path, ass: Path | None, out: Path, work: Path,
-                  voice_dur: float, video_cfg: dict, music: Path | None = None) -> Path:
+                  voice_dur: float, video_cfg: dict, music: Path | None = None,
+                  talking: Path | None = None, talk_dur: float = 0.0) -> Path:
     w, h, fps = int(video_cfg.get("width", 1080)), int(video_cfg.get("height", 1920)), int(video_cfg.get("fps", 30))
     total = voice_dur + float(video_cfg.get("tail_seconds", 0.6))
-    per = max(total / len(images), 1.5)
     clips = []
-    for i, img in enumerate(images):
+    if talking and talk_dur > 0:
+        # pehla hissa: bolta chehra (lip-sync), baaki: images (cutaway) jab tak voice chalti hai
+        talk_dur = min(talk_dur, media_duration(talking), total - 1.0)
+        c = work / "clip_talk.mp4"
+        make_talk_clip(talking, c, talk_dur, w, h, fps)
+        clips.append(c.name)
+        rest = images[1:] or images[:1]
+        per = max((total - talk_dur) / len(rest), 1.5)
+        pool = rest
+    else:
+        per = max(total / len(images), 1.5)
+        pool = images
+    for i, img in enumerate(pool):
         c = work / f"clip_{i}.mp4"
         make_clip(img, c, per, i, w, h, fps, float(video_cfg.get("oversample", 1.25)))
         clips.append(c.name)
