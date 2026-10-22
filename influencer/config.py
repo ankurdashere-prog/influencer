@@ -42,7 +42,8 @@ def now_ist() -> datetime:
 def load_history() -> list[dict]:
     if STATE_FILE.exists():
         try:
-            return json.loads(STATE_FILE.read_text(encoding="utf-8")).get("items", [])
+            items = json.loads(STATE_FILE.read_text(encoding="utf-8")).get("items", [])
+            return [i for i in items if isinstance(i, dict)]
         except json.JSONDecodeError:
             return []
     return []
