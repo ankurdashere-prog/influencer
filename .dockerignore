@@ -1,0 +1,7 @@
+.env
+.venv
+output
+character/candidates
+__pycache__
+*.pyc
+.github
