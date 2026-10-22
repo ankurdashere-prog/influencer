@@ -60,6 +60,7 @@ def shrink(src: Path, dst: Path, max_seconds: int = 60) -> Path:
         raise ReferenceError("Video compress hone ke baad bhi bahut bada hai.")
     return dst
 
+
 def analyze_video(path: Path, session=requests, sleep=time.sleep) -> dict:
     key = env("GEMINI_API_KEY")
     if not key:
@@ -72,8 +73,13 @@ def analyze_video(path: Path, session=requests, sleep=time.sleep) -> dict:
     # har model ko 3 baar (busy/429/5xx par wait karke), phir agla model
     for model in model_candidates():
         for attempt in range(3):
-            r = session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                             headers={"x-goog-api-key": key}, json=body, timeout=180)
+                       try:
+                r = session.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                 headers={"x-goog-api-key": key}, json=body, timeout=90)
+            except requests.RequestException as e:  # timeout / network
+                last = f"{model}: {type(e).__name__}"
+                sleep(3)
+                continue
             if r.status_code in (429, 500, 502, 503, 504):
                 last = f"{model}: {r.status_code} {r.text[:120]}"
                 sleep(4 * (attempt + 1))
