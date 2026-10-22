@@ -83,9 +83,13 @@
     <input type="text" id="topic" maxlength="200" placeholder="jaise: Diwali ke liye budget outfit">
     <label for="refurl">Reference reel link (optional, sirf Reel ke liye: style seekhkar nayi original reel banegi)</label>
     <input type="text" id="refurl" maxlength="300" placeholder="https://www.instagram.com/reel/...">
-    <label style="font-weight:500;display:flex;gap:8px;align-items:center;margin-top:14px">
-      <input type="checkbox" id="demo"> Test mode (bina API kharch ke, placeholder images aur khamosh voice)
-    </label>
+    <label for="stSpeed">Speed (thodi tez reel zyada engaging lagti hai)</label>
+    <select id="stSpeed"><option value="1.0">Normal (1.0x)</option><option value="1.05">Halki tez (1.05x)</option><option value="1.1" selected>Thodi tez (1.1x)</option><option value="1.15">Tez (1.15x)</option><option value="1.25">Bahut tez (1.25x)</option></select>
+    <label for="stMusicFile">Background music upload karo (mp3/m4a/wav, optional)</label>
+    <input type="file" id="stMusicFile" accept="audio/*">
+    <label for="stMusicVol">Music ki awaaz: <span id="stMusicVolVal">12</span>%</label>
+    <input type="range" id="stMusicVol" min="0" max="40" value="12">
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="stMusic" checked> File upload na ho to assets/music se music lo (agar ho)</label>
     <div class="row">
       <button class="btn" id="go">Generate</button>
       <span class="mute" id="todayHint"></span>
@@ -236,12 +240,14 @@ function renderStudio(){
   });
   $('#stMerge').classList.remove('hide');
 }
+  $('#stMusicVol').oninput=()=>$('#stMusicVolVal').textContent=$('#stMusicVol').value;
 $('#stGo').onclick=async()=>{
   const fd=new FormData(),dl=[];
   studio.scenes.forEach((s,i)=>{const f=$('#clip'+i).files[0];if(f){fd.append('clips',f);dl.push($('#dlg'+i).value)}});
   if(!dl.length)return toast('Kam se kam ek clip upload karo');
   fd.append('dialogues',JSON.stringify(dl));fd.append('topic',studio.topic);fd.append('caption',studio.caption);
-  fd.append('music',$('#stMusic').checked?'1':'0');
+  fd.append('music',$('#stMusic').checked?'1':'0');fd.append('speed',$('#stSpeed').value);
+  fd.append('music_volume',String($('#stMusicVol').value/100));const mf=$('#stMusicFile').files[0];if(mf)fd.append('music_file',mf);
   const b=$('#stGo');b.disabled=true;
   try{const r=await fetch('/api/clips/merge',{method:'POST',body:fd});
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||r.statusText)}
