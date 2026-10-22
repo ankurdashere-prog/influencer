@@ -144,7 +144,7 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
     for i, src in enumerate(clips):
         say(f"Clip {i + 1}/{len(clips)} taiyar ho rahi hai...")
         dst = work / f"norm_{i}.mp4"
-        dur = _normalize(src, dst, w, h, fps)
+        dur = _normalize(src, dst, w, h, fps, i, video_cfg)
         names.append(dst.name)
         text = (dialogues[i] if i < len(dialogues) else "").strip()
         if text:
