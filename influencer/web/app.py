@@ -227,8 +227,8 @@ async def clips_script(request: Request):
 async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form("[]"),
                       topic: str = Form("Clip Studio reel"), caption: str = Form(""), music: str = Form("1"),
                       speed: str = Form("1.1"), music_volume: str = Form("0.12"),
-                      hook_text: str = Form(""), end_text: str = Form(""),
-                      music_file: UploadFile | None = File(None)):
+                      hook_text: str = Form(""), end_text: str = Form(""), voice_name: str = Form(""), voice_id: str = Form(""),
+                      music_file: UploadFile | None = File(None), voice_file: UploadFile | None = File(None)):
     if not clips or len(clips) > 12:
         raise HTTPException(400, "1 se 12 clips chahiye")
     try:
@@ -270,10 +270,43 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
         mus.write_bytes(mdata)
     elif music == "1":
         mus = clipstudio.pick_music(ROOT)
+    vox = None
+    if voice_file is not None and voice_file.filename:
+        vext = Path(voice_file.filename).suffix.lower()
+        vdata = await voice_file.read()
+        if vext not in (".mp3", ".m4a", ".wav", ".aac", ".ogg"):
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, "Voice file mp3, m4a, wav, aac ya ogg honi chahiye")
+        if len(vdata) > 25_000_000 or len(vdata) < 1000:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, "Voice file 25 MB se chhoti honi chahiye")
+        vox = work / f"voice_in{vext}"
+        vox.write_bytes(vdata)
+    elif voice_name:
+        src = (OUTPUT_DIR / "voice" / voice_name).resolve()
+        if not re.fullmatch(r"[a-f0-9]{10}\.mp3", voice_name) or not src.exists():
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, "Voice Lab ki awaaz nahi mili, dobara banao ya file upload karo")
+        vox = work / "voice_in.mp3"
+        shutil.copyfile(src, vox)
+    vc = None
+    if voice_id:
+        err = None
+        if vox is not None:
+            err = "Clone voice ke do tareeke ek saath nahi chalte. Ek hi chuno."
+        elif not voicelab.enabled():
+            err = "ELEVENLABS_API_KEY set nahi hai."
+        elif voice_id not in {v.get("voice_id") for v in voicelab.load_voices()}:
+            err = "Ye voice list mein nahi hai. Voice Lab mein clone banao."
+        if err:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, err)
+        vc = lambda a, o, _v=voice_id: voicelab.convert(a, _v, o)  # noqa: E731
 
     def work_fn():
-        final = clipstudio.merge(paths, dlg, work, cfg, mus, say=pipeline._say, hook=hook_text[:80], end_text=end_text[:80])
-        for q in paths + ([mus] if mus else []):
+        final = clipstudio.merge(paths, dlg, work, cfg, mus, say=pipeline._say, hook=hook_text[:80], end_text=end_text[:80],
+                                 voice=vox, convert=vc)
+        for q in paths + ([mus] if mus else []) + ([vox] if vox else []):
             q.unlink(missing_ok=True)
         res = clipstudio.save_item(work, topic[:80], caption or topic, final)
         pipeline._say("Reel tayyar. Library mein dekho.")
