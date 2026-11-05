@@ -83,7 +83,145 @@ def _clean_scene(s, fb: dict) -> dict:
     return {k: re.sub(r"\s+", " ", str(s.get(k) or fb[k])).strip() for k in ("camera_angle", "visual", "action", "dialogue")}
 
 
-def make_scene_script(topic: str | None, persona: dict, n: int = N_SCENES, offline: bool = False) -> dict:
+# ---------------- Avatar mode (client ka asli avatar: 10 sec scene = 4 sec presenter + 6 sec visuals) ----------------
+AVATAR_SCENES = 3
+PRESENTER_SECONDS = 4
+_RISKY = re.compile(r"guarantee|100\s*%|permanent|\bcure\b|chamatkar|risk[- ]?free|no side effect|pain[- ]?free|painless",
+                    re.I)
+
+
+def _avatar_norm(a: dict | None) -> dict | None:
+    if not a or not isinstance(a, dict):
+        return None
+
+    def clean(k: str, default: str = "", n: int = 200) -> str:
+        return re.sub(r"\s+", " ", str(a.get(k) or default)).strip()[:n]
+
+    try:
+        n = int(a.get("scenes") or AVATAR_SCENES)
+    except (TypeError, ValueError):
+        n = AVATAR_SCENES
+    return {"name": clean("name", "Avatar", 60), "role": clean("role", "", 80),
+            "gender": "female" if str(a.get("gender", "male")).lower().startswith("f") else "male",
+            "look": clean("look", "", 300), "language": clean("language", "Hinglish (Hindi in Roman script)", 60),
+            "scenes": min(max(n, 1), 6)}
+
+
+def build_avatar_prompt(s: dict, a: dict) -> str:
+    he, his = ("He", "His") if a["gender"] == "male" else ("She", "Her")
+    look = f" {a['look'].rstrip('. ')}." if a["look"] else ""
+    return (
+        "IDENTITY LOCK (read this fully before creating the video): use ONLY the attached avatar for the person. "
+        "Keep the exact same face, hairstyle, facial hair, skin tone, body, outfit, voice, background and lighting "
+        f"as the avatar in this clip. Do not change anything about the person.{look}\n"
+        "Format: vertical 9:16, 10 seconds, realistic phone-camera look, no subtitles, no text or logos added on screen.\n"
+        f"Seconds 0-{PRESENTER_SECONDS} (presenter on camera): {s['camera_angle']}. {s['action']}. "
+        f"{he} speaks to the camera in {a['language']}, clear natural voice, lips in sync: \"{s['presenter_line']}\"\n"
+        f"Seconds {PRESENTER_SECONDS}-10 (cutaway visuals, presenter not on screen): {s['visual']}. "
+        f"{his} voiceover continues in the exact same voice and tone: \"{s['voiceover_line']}\"\n"
+        "Same face and same voice in every clip. Wholesome and brand-safe."
+    )
+
+
+def _avatar_llm_prompt(topic: str | None, a: dict, n: int) -> str:
+    who = a["name"] + (f", {a['role']}" if a["role"] else "")
+    lines = [
+        f"You write a short vertical video script for {who}. The video is clearly AI-assisted and the real person "
+        "will review and approve every line before posting.",
+        f"Language: {a['language']}.",
+    ]
+    if topic:
+        lines.append(f"TOPIC (use it): {topic}")
+    lines += [
+        f"Return ONE JSON object with keys: topic, hook_text, caption, hashtags, scenes. scenes = exactly {n} objects "
+        "with keys camera_angle, action, presenter_line, visual, voiceover_line.",
+        f"- Each scene is ONE 10-second clip: seconds 0-{PRESENTER_SECONDS} the presenter speaks to camera "
+        f"(presenter_line), seconds {PRESENTER_SECONDS}-10 cutaway visuals while the same voice continues "
+        "(voiceover_line).",
+        "- presenter_line: max 10 words. voiceover_line: max 16 words. Together about 120-145 characters, one complete "
+        "idea, sentences must finish inside the scene.",
+        "- Scene 1 = scroll-stopping hook. Last scene = invite the viewer to ask a question or book a consultation.",
+        "- camera_angle and action: simple (close-up, medium shot; small gesture, nod, smile). Do not describe the face.",
+        "- visual: what the cutaway shows (clinic or lifestyle b-roll, hands, objects, text-free scenes). No faces.",
+        "- hook_text: max 6 words shown on screen for the first 2 seconds. caption: 2-4 short lines, ends with a "
+        "question. hashtags: 8-12 strings, no #.",
+        "RULES: general education only. Never invent credentials, patient stories, testimonials, before/after results, "
+        "prices, offers or guarantees. No claims like cure, permanent, 100%, painless or risk-free. No medical advice "
+        "for a specific person; suggest consulting a qualified doctor. Nothing political. Brand-safe.",
+    ]
+    return "\n".join(lines)
+
+
+def _avatar_fallback(topic: str | None, a: dict, n: int) -> dict:
+    t = (topic or "ek zaroori jaankari")[:60]
+    nm = a["name"]
+    base = [
+        ("Close-up, eye level", "Smiles and gives a small wave",
+         f"Namaste, main {nm}. Aaj {t} ke baare mein suniye.", "Clean, bright clinic reception, soft daylight, hands arranging papers",
+         "Sahi jaankari hi pehla kadam hai, aur galat jaankari se bachna zaroori hai."),
+        ("Medium shot, slightly low angle", "Gestures with one hand while explaining",
+         "Sabse pehle ek baat samajh lijiye.", "Close-up of a notebook and pen on a desk, warm light",
+         "Har insaan ka case alag hota hai, isliye general baatein sabke liye ek jaisi nahi hoti."),
+        ("Close-up, shallow depth of field", "Nods and speaks calmly",
+         "Faisla lene se pehle sawal poochiye.", "Soft-focus shots of a calm waiting area with plants",
+         "Apne doctor se poori baat karein, aur jo samajh na aaye wo dobara poochiye."),
+        ("Medium shot, eye level", "Leans slightly forward, friendly tone",
+         "Ek aur zaroori baat.", "Hands holding a cup of tea near a window, natural light",
+         "Jaldbaazi mein nahi, soch samajh kar aur sahi salah ke saath kadam uthaiye."),
+        ("Close-up, eye level", "Smiles and raises eyebrows",
+         "Aapka sawal kya hai?", "Phone showing a chat window, text-free, soft light",
+         "Comment mein apna sawal likhiye, ya consultation ke liye clinic se baat kijiye."),
+    ]
+    scenes = [dict(zip(("camera_angle", "action", "presenter_line", "visual", "voiceover_line"), base[i % len(base)]))
+              for i in range(n)]
+    return {"topic": t[:80], "hook_text": f"{t[:28]}? JAANIYE", "caption": f"{t}\nAapka kya sawal hai?",
+            "hashtags": ["education", "reels"], "scenes": scenes}
+
+
+_AV_KEYS = ("camera_angle", "action", "presenter_line", "visual", "voiceover_line")
+
+
+def _clean_avatar_scene(s, fb: dict) -> dict:
+    s = s if isinstance(s, dict) else {}
+    out = {k: re.sub(r"\s+", " ", str(s.get(k) or fb[k])).strip() for k in _AV_KEYS}
+    if _RISKY.search(out["presenter_line"] + " " + out["voiceover_line"] + " " + out["visual"]):
+        return dict(fb)  # risky wording: safe template line use karo
+    return out
+
+
+def _make_avatar_script(topic: str | None, a: dict, offline: bool) -> dict:
+    n = a["scenes"]
+    fb = _avatar_fallback(topic, a, n)
+    raw, note = fb, "Template use hua (Gemini/OpenAI ka jawab nahi mila). Doctor se script approve karwa lijiye."
+    if not offline:
+        try:
+            got = gemini_json(_avatar_llm_prompt(topic, a, n))
+            if isinstance(got.get("scenes"), list) and got["scenes"]:
+                raw, note = got, "Script doctor/client se approve karwa kar hi post karein."
+        except Exception as e:  # noqa: BLE001
+            note = f"Template use hua ({str(e)[:120]}). Doctor se script approve karwa lijiye."
+    scenes = []
+    for i in range(n):
+        src = raw["scenes"][i] if i < len(raw["scenes"]) else {}
+        sc = _clean_avatar_scene(src, fb["scenes"][i])
+        sc["dialogue"] = f"{sc['presenter_line']} {sc['voiceover_line']}".strip()
+        sc["prompt"] = build_avatar_prompt(sc, a)
+        scenes.append(sc)
+    tags = list(dict.fromkeys(t for t in (re.sub(r"[^\w]", "", str(x)) for x in (raw.get("hashtags") or [])) if t))[:20]
+    disclosure = f"AI-assisted video, {a['name']} ki approved script par bani."
+    cap = [str(raw.get("caption") or fb["caption"]).strip(), disclosure, " ".join("#" + t for t in tags)]
+    hook = re.sub(r"\s+", " ", str(raw.get("hook_text") or fb["hook_text"])).strip()[:60]
+    if _RISKY.search(hook):
+        hook = fb["hook_text"]
+    return {"topic": str(raw.get("topic") or fb["topic"])[:80], "caption": "\n\n".join(p for p in cap if p)[:2150],
+            "hook_text": hook, "scenes": scenes, "note": note, "mode": "avatar"}
+
+
+def make_scene_script(topic: str | None, persona: dict, n: int = N_SCENES, offline: bool = False,
+                      avatar: dict | None = None) -> dict:
+    av = _avatar_norm(avatar)
+    if av:  # client ka asli avatar (Avatar mode)
+        return _make_avatar_script(topic, av, offline)
     fb = _fallback(topic, n)
     raw, note = fb, "Template use hua (Gemini/OpenAI ka jawab nahi mila)."
     if not offline:
