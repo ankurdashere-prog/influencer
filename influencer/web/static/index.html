@@ -130,6 +130,12 @@
     <input type="text" id="stEnd" maxlength="60" value="Follow karo, aur reels ke liye">
     <label for="stSpeed">Speed (thodi tez reel zyada engaging lagti hai)</label>
     <select id="stSpeed"><option value="1.0">Normal (1.0x)</option><option value="1.05">Halki tez (1.05x)</option><option value="1.1" selected>Thodi tez (1.1x)</option><option value="1.15">Tez (1.15x)</option><option value="1.25">Bahut tez (1.25x)</option></select>
+    <label for="stVoiceChange">Clips ki awaaz ElevenLabs clone voice mein badlo (lip-sync bacha rehta hai, ElevenLabs credits kharch hote hain)</label>
+    <select id="stVoiceChange"><option value="">Nahi, clip ki original awaaz rakho</option></select>
+    <label for="stVoiceFile">Clone voice (ElevenLabs ki mp3) clips ki awaaz ki jagah lagao (optional)</label>
+    <input type="file" id="stVoiceFile" accept="audio/*">
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="stUseVoice"> Voice Lab ki abhi banayi hui awaaz use karo <span class="mute" id="stUseVoiceName"></span></label>
+    <p class="mute">Dhyan: Flow clip mein doctor ke hont Flow ki apni awaaz par hilte hain. Clone awaaz lagane par on-camera hisse mein lip-sync thoda alag dikh sakta hai. Cutaway (visuals) wale hisse mein koi dikkat nahi.</p>
     <label for="stMusicFile">Background music upload karo (mp3/m4a/wav, optional)</label>
     <input type="file" id="stMusicFile" accept="audio/*">
     <label for="stMusicVol">Music ki awaaz: <span id="stMusicVolVal">12</span>%</label>
@@ -296,6 +302,11 @@ $('#stGo').onclick=async()=>{
   fd.append('dialogues',JSON.stringify(dl));fd.append('topic',studio.topic);fd.append('caption',studio.caption);
   fd.append('music',$('#stMusic').checked?'1':'0');fd.append('speed',$('#stSpeed').value);fd.append('hook_text',$('#stHook').value);fd.append('end_text',$('#stEnd').value);
   fd.append('music_volume',String($('#stMusicVol').value/100));const mf=$('#stMusicFile').files[0];if(mf)fd.append('music_file',mf);
+  const vf=$('#stVoiceFile').files[0];
+  if(vf)fd.append('voice_file',vf);
+  else if($('#stUseVoice').checked){if(!lastVoice)return toast('Pehle Voice Lab mein Awaaz banao');fd.append('voice_name',lastVoice)}
+  const vc=$('#stVoiceChange').value;
+  if(vc){if(vf||$('#stUseVoice').checked)return toast('Clone voice ka ek hi tareeka chuno');fd.append('voice_id',vc)}
   const b=$('#stGo');b.disabled=true;
   try{const r=await fetch('/api/clips/merge',{method:'POST',body:fd});
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||r.statusText)}
@@ -373,14 +384,19 @@ $('#addBrand').onclick=async()=>{const n=$('#newBrand').value.trim().toLowerCase
 loadCreate();
 
 // Voice Lab
+let lastVoice='';
 async function vlLoad(){
   try{const d=await api('/api/voice');
     $('#vlKey').textContent=d.elevenlabs?'ElevenLabs key mili: ready.':'ELEVENLABS_API_KEY set nahi hai (Render > Environment mein daalo).';
     const sel=$('#vlVoice');sel.innerHTML='';
+    const sv=$('#stVoiceChange'),keep=sv.value;sv.length=1;
+    d.voices.forEach(v=>sv.append(el('option',{value:v.voice_id},'Badlo: '+v.name)));
+    if([...sv.options].some(o=>o.value===keep))sv.value=keep;
     d.voices.forEach(v=>sel.append(el('option',{value:v.voice_id},v.name)));
     if(!d.voices.length)sel.append(el('option',{value:''},'(pehle clone banao)'));
   }catch(e){toast('Error: '+e.message)}
 }
+vlLoad();
 $('#vlEleven').onchange=()=>{const on=$('#vlEleven').checked;$('#vlElevenBox').classList.toggle('hide',!on);$('#vlOpenBox').classList.toggle('hide',on);if(on)vlLoad()};
 $('#vlClone').onclick=async()=>{const b=$('#vlClone');
   if(!$('#vlConsent').checked)return toast('Pehle consent checkbox tick karo');
@@ -395,7 +411,7 @@ $('#vlClone').onclick=async()=>{const b=$('#vlClone');
   catch(e){toast('Error: '+e.message)}b.disabled=false};
 $('#vlSpeak').onclick=async()=>{const b=$('#vlSpeak');b.disabled=true;
   try{const d=await post('/api/voice/speak',{provider:'elevenlabs',voice_id:$('#vlVoice').value,text:$('#vlText').value});
-    const a=$('#vlAudio');a.src=d.url;a.classList.remove('hide');const l=$('#vlDl');l.href=d.url;l.classList.remove('hide');l.textContent='Audio download karo ('+d.file+')'}
+    lastVoice=d.file;$('#stUseVoiceName').textContent='('+d.file+')';const a=$('#vlAudio');a.src=d.url;a.classList.remove('hide');const l=$('#vlDl');l.href=d.url;l.classList.remove('hide');l.textContent='Audio download karo ('+d.file+')'}
   catch(e){toast('Error: '+e.message)}b.disabled=false};
 $('#vlDel').onclick=async()=>{const v=$('#vlVoice').value;if(!v||!confirm('Ye voice hata dein?'))return;
   try{await api('/api/voice/'+encodeURIComponent(v),{method:'DELETE'});await vlLoad()}catch(e){toast('Error: '+e.message)}};
