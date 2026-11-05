@@ -102,7 +102,22 @@
   <div class="card">
     <h2>Clip Studio (test)</h2>
     <p class="mute">1) Script aur scene-wise prompts banao. 2) Har prompt apne video tool (jaise Flow) mein avatar image ke saath paste karke 4 second ka clip banao. 3) Clips yahan upload karo, hum jodkar captions aur music ke saath reel bana denge.</p>
-    <p><a href="/character-files/reference.png" download="avatar.png">Avatar image download karo</a> <span class="mute">(video tool mein upload karne ke liye; Character tab mein pehle chehra set karo)</span></p>
+    <p id="avDl"><a href="/character-files/reference.png" download="avatar.png">Avatar image download karo</a> <span class="mute">(video tool mein upload karne ke liye; Character tab mein pehle chehra set karo)</span></p>
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="avOn"> Avatar mode (client ka asli avatar: har scene 10 sec = 4 sec avatar bolta hai + 6 sec visuals)</label>
+    <div id="avBox" class="hide">
+      <label for="avName">Avatar ka naam (jaise: Dr. Ashish)</label>
+      <input type="text" id="avName" maxlength="60">
+      <label for="avRole">Kaam ya niche (optional)</label>
+      <input type="text" id="avRole" maxlength="80" placeholder="jaise: clinic ki general jaankari">
+      <label for="avGender">Avatar</label>
+      <select id="avGender"><option value="male">Purush</option><option value="female">Mahila</option></select>
+      <label for="avLook">Look (kapde aur background, jaisa avatar mein hai)</label>
+      <input type="text" id="avLook" maxlength="300" placeholder="jaise: black scrub top, red wall background, round mirror">
+      <label for="avScenes">Kitne scenes (har scene 10 sec)</label>
+      <select id="avScenes"><option value="2">2 (~20 sec)</option><option value="3" selected>3 (~30 sec)</option><option value="4">4 (~40 sec)</option><option value="5">5 (~50 sec)</option></select>
+      <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="avConsent"> Is insaan ne chehre aur awaaz ke use ki likhit permission di hai, aur har script wo khud approve karega</label>
+      <p class="mute">Flow mein: Video, Ingredients mein avatar attach karo, model Omni Flash, 10 sec, 9:16, phir scene ka poora prompt paste karo. Post par "AI-generated" label zaroor lagao.</p>
+    </div>
     <label for="stTopic">Topic (khaali chhodo to AI sochega)</label>
     <input type="text" id="stTopic" maxlength="200" placeholder="jaise: Morning routine tips">
     <div class="row"><button class="btn" id="stScript">Script aur prompts banao</button></div>
@@ -225,13 +240,22 @@ $('#toLib').onclick=()=>show('library');
 
 // clip studio
 let studio=null;
-$('#stScript').onclick=async()=>{const b=$('#stScript');b.disabled=true;
-  try{studio=await post('/api/clips/script',{topic:$('#stTopic').value});renderStudio();if(studio.note)toast(studio.note)}
+$('#avOn').onchange=()=>{const on=$('#avOn').checked;$('#avBox').classList.toggle('hide',!on);$('#avDl').classList.toggle('hide',on)};
+$('#stScript').onclick=async()=>{const b=$('#stScript');
+  const body={topic:$('#stTopic').value};
+  if($('#avOn').checked){
+    if(!$('#avConsent').checked)return toast('Pehle consent checkbox tick karo');
+    if(!$('#avName').value.trim())return toast('Avatar ka naam likho');
+    body.avatar={name:$('#avName').value,role:$('#avRole').value,gender:$('#avGender').value,look:$('#avLook').value,
+      scenes:Number($('#avScenes').value),consent:true};
+  }
+  b.disabled=true;
+  try{studio=await post('/api/clips/script',body);renderStudio();if(studio.note)toast(studio.note)}
   catch(e){toast('Error: '+e.message)}b.disabled=false};
 function renderStudio(){
   const box=$('#stScenes');box.replaceChildren();
   studio.scenes.forEach((s,i)=>{
-    const ta=el('textarea',{spellcheck:'false',style:'min-height:150px'});ta.value=s.prompt;
+    const ta=el('textarea',{spellcheck:'false',style:'min-height:'+(studio.mode==='avatar'?280:150)+'px'});ta.value=s.prompt;
     box.append(el('div',{class:'card'},el('b',{},'Scene '+(i+1)),ta,
       el('div',{class:'row'},el('button',{class:'btn alt',onclick:async()=>{try{await navigator.clipboard.writeText(ta.value);toast('Copy ho gaya')}catch{ta.select();toast('Select ho gaya, Ctrl+C dabao')}}},'Prompt copy karo')),
       el('label',{},'Caption text (jo bola jayega)'),el('input',{type:'text',id:'dlg'+i,value:s.dialogue}),
