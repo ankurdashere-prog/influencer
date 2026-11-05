@@ -138,6 +138,30 @@
     <div class="row"><button class="btn" id="stGo">Clips jodkar reel banao</button></div>
     <div class="log hide" id="stLog"></div>
   </div>
+  <div class="card">
+    <h2>Voice Lab (client ki awaaz)</h2>
+    <p class="mute">Do raaste: <b>ElevenLabs</b> (API, neeche tick karo) ya <b>OpenVoice v2</b> (free, Colab par; tick mat karo).</p>
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="vlEleven"> ElevenLabs API use karo (credits kharch honge)</label>
+    <div id="vlElevenBox" class="hide">
+      <p class="mute" id="vlKey"></p>
+      <label for="vlName">Naya voice clone: naam</label>
+      <input type="text" id="vlName" maxlength="60" placeholder="jaise: Dr. Ashish">
+      <label for="vlFiles">Awaaz ka sample (1-2 min saaf recording, mp3/wav/m4a)</label>
+      <input type="file" id="vlFiles" accept="audio/*,.m4a,.mp3,.wav" multiple>
+      <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="vlConsent"> Is insaan ne apni awaaz clone karne ki likhit permission di hai, aur har script wo approve karega</label>
+      <div class="row"><button class="btn alt" id="vlClone">Voice clone banao</button></div>
+      <label for="vlVoice">Voice chuno</label>
+      <select id="vlVoice"></select>
+      <label for="vlText">Script (approved, max 1500 characters)</label>
+      <textarea id="vlText" spellcheck="false" style="min-height:120px"></textarea>
+      <div class="row"><button class="btn" id="vlSpeak">Awaaz banao</button> <button class="btn alt" id="vlDel">Ye voice hatao</button></div>
+      <audio id="vlAudio" controls class="hide" style="width:100%;margin-top:10px"></audio>
+      <p><a id="vlDl" class="hide" download>Audio download karo</a></p>
+    </div>
+    <div id="vlOpenBox">
+      <p class="mute">OpenVoice (free): Colab mein doctor ki sample se awaaz clone karke script ka audio banao, phir wo mp3 Flow ya lip-sync tool mein use karo. Post par AI label zaroor lagao.</p>
+    </div>
+  </div>
 </section>
 
 <section id="t-library" class="hide">
@@ -347,6 +371,34 @@ $('#addBrand').onclick=async()=>{const n=$('#newBrand').value.trim().toLowerCase
   try{await api('/api/brands/'+n,{method:'PUT',body:JSON.stringify({text:tpl})});$('#newBrand').value='';loadSettings()}catch(e){toast(e.message)}};
 
 loadCreate();
+
+// Voice Lab
+async function vlLoad(){
+  try{const d=await api('/api/voice');
+    $('#vlKey').textContent=d.elevenlabs?'ElevenLabs key mili: ready.':'ELEVENLABS_API_KEY set nahi hai (Render > Environment mein daalo).';
+    const sel=$('#vlVoice');sel.innerHTML='';
+    d.voices.forEach(v=>sel.append(el('option',{value:v.voice_id},v.name)));
+    if(!d.voices.length)sel.append(el('option',{value:''},'(pehle clone banao)'));
+  }catch(e){toast('Error: '+e.message)}
+}
+$('#vlEleven').onchange=()=>{const on=$('#vlEleven').checked;$('#vlElevenBox').classList.toggle('hide',!on);$('#vlOpenBox').classList.toggle('hide',on);if(on)vlLoad()};
+$('#vlClone').onclick=async()=>{const b=$('#vlClone');
+  if(!$('#vlConsent').checked)return toast('Pehle consent checkbox tick karo');
+  if(!$('#vlName').value.trim())return toast('Voice ka naam likho');
+  if(!$('#vlFiles').files.length)return toast('Awaaz ka sample chuno');
+  const fd=new FormData();fd.append('name',$('#vlName').value);fd.append('consent','1');
+  [...$('#vlFiles').files].slice(0,3).forEach(f=>fd.append('samples',f));
+  b.disabled=true;
+  try{const r=await fetch('/api/voice/clone',{method:'POST',body:fd});
+    if(!r.ok){let m=r.statusText;try{m=(await r.json()).detail||m}catch{}throw new Error(m)}
+    toast('Voice clone ban gayi');await vlLoad()}
+  catch(e){toast('Error: '+e.message)}b.disabled=false};
+$('#vlSpeak').onclick=async()=>{const b=$('#vlSpeak');b.disabled=true;
+  try{const d=await post('/api/voice/speak',{provider:'elevenlabs',voice_id:$('#vlVoice').value,text:$('#vlText').value});
+    const a=$('#vlAudio');a.src=d.url;a.classList.remove('hide');const l=$('#vlDl');l.href=d.url;l.classList.remove('hide');l.textContent='Audio download karo ('+d.file+')'}
+  catch(e){toast('Error: '+e.message)}b.disabled=false};
+$('#vlDel').onclick=async()=>{const v=$('#vlVoice').value;if(!v||!confirm('Ye voice hata dein?'))return;
+  try{await api('/api/voice/'+encodeURIComponent(v),{method:'DELETE'});await vlLoad()}catch(e){toast('Error: '+e.message)}};
 </script>
 </body>
 </html>
