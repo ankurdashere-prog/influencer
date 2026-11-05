@@ -308,12 +308,29 @@ def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg
     return dur
 
 
+def revoice(src: Path, dst: Path, convert) -> Path:
+    """Clip ki awaaz nikaal kar convert(audio_in, audio_out) se badalta hai aur wapas video par chipkata hai.
+    Video ek frame bhi nahi chhedta, awaaz ki timing wahi rehti hai (lip-sync bacha rehta hai)."""
+    a_in, a_out = dst.with_suffix(".in.mp3"), dst.with_suffix(".out.mp3")
+    run_ff(["-i", str(src), "-vn", "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", str(a_in)])
+    convert(a_in, a_out)
+    vd = media_duration(src)
+    run_ff(["-i", str(src), "-i", str(a_out), "-filter_complex", "[1:a]aresample=44100,apad[a]", "-map", "0:v",
+            "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-t", f"{vd:.3f}", str(dst)])
+    a_in.unlink(missing_ok=True)
+    a_out.unlink(missing_ok=True)
+    return dst
+
+
 def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, music: Path | None = None,
-          say=print, hook: str = "", end_text: str = "") -> Path:
+          say=print, hook: str = "", end_text: str = "", voice: Path | None = None, convert=None) -> Path:
     w, h, fps = int(video_cfg.get("width", 1080)), int(video_cfg.get("height", 1920)), int(video_cfg.get("fps", 30))
     names, words, t0 = [], [], 0.0
     for i, src in enumerate(clips):
         say(f"Clip {i + 1}/{len(clips)} taiyar ho rahi hai...")
+        if convert and has_audio(src):
+            say(f"Clip {i + 1}: awaaz clone voice mein badli ja rahi hai...")
+            src = revoice(src, work / f"vc_{i}.mp4", convert)
         dst = work / f"norm_{i}.mp4"
         dur = _normalize(src, dst, w, h, fps, i, video_cfg)
         names.append(dst.name)
@@ -328,17 +345,31 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
            if (words or extra) else None)
     out = work / "reel.mp4"
 
+    if voice:
+        vd = media_duration(voice)
+        if vd > t0 + 0.3:
+            say(f"Dhyan: awaaz ({vd:.0f}s) video ({t0:.0f}s) se lambi hai, aakhir ka hissa kat jayega.")
+
     def final(with_caps: bool) -> None:
         args = ["-f", "concat", "-safe", "0", "-i", "clips.txt"]
         vf = "subtitles=captions.ass" if (with_caps and ass) else "null"
+        nxt = 1
+        va = "0:a"  # default: clips ki apni awaaz
+        pre = ""
+        if voice:  # clone wali awaaz clips ki awaaz ki jagah aati hai
+            args += ["-i", str(voice.resolve())]
+            pre = f"[{nxt}:a]aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11,apad[va];"
+            va, nxt = "[va]", nxt + 1
         if music:
             args += ["-stream_loop", "-1", "-i", str(music.resolve())]
             vol = float(video_cfg.get("music_volume", 0.12))
-            fc = (f"[0:v]{vf}[v];[1:a]volume={vol}[m];[0:a][m]amix=inputs=2:duration=first:"
+            src = va if voice else "[0:a]"
+            fc = (f"{pre}[0:v]{vf}[v];[{nxt}:a]volume={vol}[m];{src}[m]amix=inputs=2:duration=first:"
                   "dropout_transition=0,volume=2,alimiter=limit=0.95[a]")
             maps = ["-map", "[v]", "-map", "[a]"]
         else:
-            fc, maps = f"[0:v]{vf}[v]", ["-map", "[v]", "-map", "0:a"]
+            fc = f"{pre}[0:v]{vf}[v]"
+            maps = ["-map", "[v]", "-map", va if voice else "0:a"]
         args += ["-filter_complex", fc, *maps, "-t", f"{t0:.2f}", "-r", str(fps), "-threads", "1", "-filter_threads", "1",
                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-x264-params", "rc-lookahead=8:ref=2",
                  "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out.resolve())]
