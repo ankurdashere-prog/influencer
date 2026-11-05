@@ -75,8 +75,7 @@ def _fallback(topic: str | None, n: int) -> dict:
          "Smiles and raises eyebrows", "Tum kya try karoge? Comment mein batao."),
     ]
     scenes = [dict(zip(("camera_angle", "visual", "action", "dialogue"), base[i % len(base)])) for i in range(n)]
-    return {"topic": t[:80], "hook_text": f"{t[:28]}? YE DEKHO", "caption": f"{t} 💛\nTumhara kya khayal hai?",
-            "hashtags": ["aiinfluencer", "reels"], "scenes": scenes}
+    return {"topic": t[:80], "hook_text": f"{t[:28]}? YE DEKHO", "caption": f"{t} 💛\nTumhara kya khayal hai?", "hashtags": ["aiinfluencer", "reels"], "scenes": scenes}
 
 
 def _clean_scene(s, fb: dict) -> dict:
@@ -114,13 +113,41 @@ def has_audio(path: Path) -> bool:
     return "Audio:" in p.stderr
 
 
+def speech_bounds(path: Path, db: float = -32.0, min_sil: float = 0.12) -> tuple[float, float] | None:
+    """Clip mein awaaz kahan se kahan tak hai (second mein). Awaaz na mile ya poori clip khamosh ho to None."""
+    if not has_audio(path):
+        return None
+    total = media_duration(path)
+    p = subprocess.run([ffmpeg_exe(), "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af",
+                        f"silencedetect=noise={db}dB:d={min_sil}", "-f", "null", "-"], capture_output=True, text=True)
+    starts = [float(x) for x in re.findall(r"silence_start: (-?[\d.]+)", p.stderr)]
+    ends = [float(x) for x in re.findall(r"silence_end: (-?[\d.]+)", p.stderr)]
+    ivs = [(s, ends[i] if i < len(ends) else None) for i, s in enumerate(starts)]
+    start, end = 0.0, total
+    if ivs and ivs[0][0] <= 0.05:  # clip khamoshi se shuru hoti hai
+        if ivs[0][1] is None or ivs[0][1] >= total - 0.05:
+            return None  # poori clip khamosh
+        start = ivs[0][1]
+    if ivs:
+        s_last, e_last = ivs[-1]
+        if (e_last is None or e_last >= total - 0.05) and s_last > start:
+            end = s_last  # aakhir tak khamoshi chali gayi
+    return (start, end) if end - start >= 0.3 else None
+
+
 def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg: dict | None = None) -> float:
-    """Clip ko 9:16 mein laata hai. Pro-style: shuru/aakhir ke dead frames trim, ek-ek chhod kar halka punch-in
-    zoom (jump-cut feel), awaaz ka volume barabar, aur chhoti fade (click/pop nahi)."""
+    """Clip ko 9:16 mein laata hai. Pro-style: awaaz ke shuru/aakhir ki lambi khamoshi (seam ka asli 'gap') kaat kar
+    sirf chhota natural pause chhodta hai, ek-ek chhod kar halka punch-in zoom (jump-cut feel), awaaz ka volume
+    barabar, aur bahut chhoti fade (click/pop nahi, par dip bhi nahi)."""
     cfg = cfg or {}
     full = media_duration(src)
     head = float(cfg.get("clip_trim_head", 0.15))
     tail = float(cfg.get("clip_trim_tail", 0.2))
+    if cfg.get("trim_silence", True):
+        b = speech_bounds(src, float(cfg.get("silence_db", -32.0)))
+        if b:  # awaaz mili: usi ke hisaab se kaato (thoda pad chhod kar)
+            head = min(max(b[0] - float(cfg.get("clip_pad_head", 0.08)), 0.0), 1.2)
+            tail = min(max(full - (b[1] + float(cfg.get("clip_pad_tail", 0.18))), 0.0), 1.5)
     if full - head - tail < 1.0:  # bahut chhoti clip ko mat kaato
         head = tail = 0.0
     sp = min(max(float(cfg.get("clip_speed", 1.0)), 0.8), 1.5)
@@ -131,9 +158,9 @@ def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg
     enc = ["-threads", "1", "-filter_threads", "1", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
            "-x264-params", "rc-lookahead=8:ref=2", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "44100", "-ac", "2",
            "-b:a", "160k", "-t", f"{dur:.2f}"]
-    fade = max(dur - 0.08, 0.1)
+    fade = max(dur - 0.015, 0.05)
     tempo = f"atempo={sp:.4f}," if abs(sp - 1.0) > 0.001 else ""
-    af = tempo + (f"loudnorm=I=-16:TP=-1.5:LRA=11,afade=t=in:d=0.04,afade=t=out:st={fade:.2f}:d=0.08"
+    af = tempo + (f"loudnorm=I=-16:TP=-1.5:LRA=11,afade=t=in:d=0.012,afade=t=out:st={fade:.3f}:d=0.012"
                   if cfg.get("normalize_audio", True) else "anull")
     if has_audio(src):
         run_ff(["-ss", f"{head:.2f}", "-i", str(src), "-vf", vf, "-af", af, *enc, str(dst)])
