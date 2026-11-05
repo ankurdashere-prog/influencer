@@ -14,6 +14,7 @@ from .config import ROOT, env, now_ist
 VOICES_FILE = ROOT / "state" / "voices.json"
 API = "https://api.elevenlabs.io"
 MODEL = "eleven_multilingual_v2"
+STS_MODEL = "eleven_multilingual_sts_v2"  # voice changer: timing wahi rehti hai, awaaz clone ki
 MAX_SAMPLE_BYTES = 10 * 1024 * 1024
 MAX_TEXT = 1500
 
@@ -114,3 +115,18 @@ def delete(voice_id: str) -> None:
         if r.status_code not in (200, 404):
             raise _fail(r, "delete")
     _save([v for v in items if v.get("voice_id") != voice_id])
+
+
+def convert(audio: Path, voice_id: str, out: Path) -> Path:
+    """Kisi bhi bolti hui audio (jaise Flow clip ki awaaz) ko clone voice mein badalta hai. Timing wahi rehti hai,
+    isliye lip-sync bacha rehta hai. Max 5 minute / 50 MB per request."""
+    if voice_id not in {v.get("voice_id") for v in load_voices()}:
+        raise VoiceError("Ye voice list mein nahi hai. Pehle clone banao.")
+    with open(audio, "rb") as f:
+        r = requests.post(f"{API}/v1/speech-to-speech/{voice_id}", headers={**_headers(), "Accept": "audio/mpeg"},
+                          params={"output_format": "mp3_44100_128"},
+                          data={"model_id": STS_MODEL}, files={"audio": (audio.name, f, "audio/mpeg")}, timeout=300)
+    if r.status_code != 200:
+        raise _fail(r, "voice badalna")
+    out.write_bytes(r.content)
+    return out
