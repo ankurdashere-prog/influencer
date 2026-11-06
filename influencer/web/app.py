@@ -228,7 +228,8 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
                       topic: str = Form("Clip Studio reel"), caption: str = Form(""), music: str = Form("1"),
                       speed: str = Form("1.1"), music_volume: str = Form("0.12"),
                       hook_text: str = Form(""), end_text: str = Form(""), voice_name: str = Form(""), voice_id: str = Form(""),
-                      music_file: UploadFile | None = File(None), voice_file: UploadFile | None = File(None)):
+                      music_file: UploadFile | None = File(None), voice_file: UploadFile | None = File(None),
+                      broll_files: list[UploadFile] = File([]), broll_meta: str = Form("[]")):
     if not clips or len(clips) > 12:
         raise HTTPException(400, "1 se 12 clips chahiye")
     try:
@@ -253,6 +254,40 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
             return min(max(float(v), lo), hi)
         except (TypeError, ValueError):
             return default
+
+    broll: dict[int, dict] = {}
+    try:
+        metas = json.loads(broll_meta)
+        metas = metas if isinstance(metas, list) else []
+    except (json.JSONDecodeError, TypeError):
+        metas = []
+    for j, bf in enumerate(broll_files or []):
+        if not bf.filename:
+            continue
+        meta = metas[j] if j < len(metas) and isinstance(metas[j], dict) else {}
+        try:
+            k = int(meta.get("clip"))
+        except (TypeError, ValueError):
+            k = -1
+        bext = Path(bf.filename).suffix.lower()
+        bdata = await bf.read()
+        err = None
+        if not 0 <= k < len(paths):
+            err = "B-roll kis clip par lagani hai, ye samajh nahi aaya. Page refresh karke dobara try karo."
+        elif bext not in clipstudio.BROLL_EXT:
+            err = "B-roll photo (jpg, png, webp) ya video (mp4, mov, webm) honi chahiye."
+        elif len(bdata) > 60_000_000 or len(bdata) < 500:
+            err = f"Clip {k + 1} ki B-roll khaali hai ya 60 MB se badi hai."
+        if err:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, err)
+        bp = work / f"broll_in_{k}{bext}"
+        bp.write_bytes(bdata)
+        end = meta.get("end")
+        broll[k] = {"path": bp, "start": _num(meta.get("start"), 0.0, 30.0, 6.0),
+                    "end": None if end in (None, "", 0) else _num(end, 0.0, 30.0, 0.0) or None,
+                    "effect": meta.get("effect") if meta.get("effect") in clipstudio.BROLL_EFFECTS else "slow_push",
+                    "transition": meta.get("transition") if meta.get("transition") in clipstudio.BROLL_TRANSITIONS else "fade"}
 
     cfg = dict(pipeline.settings()["video"], clip_speed=_num(speed, 0.8, 1.5, 1.1),
                music_volume=_num(music_volume, 0.0, 0.6, 0.12))
@@ -305,8 +340,8 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
 
     def work_fn():
         final = clipstudio.merge(paths, dlg, work, cfg, mus, say=pipeline._say, hook=hook_text[:80], end_text=end_text[:80],
-                                 voice=vox, convert=vc)
-        for q in paths + ([mus] if mus else []) + ([vox] if vox else []):
+                                 voice=vox, convert=vc, broll=broll or None)
+        for q in paths + [b["path"] for b in broll.values()] + ([mus] if mus else []) + ([vox] if vox else []):
             q.unlink(missing_ok=True)
         res = clipstudio.save_item(work, topic[:80], caption or topic, final)
         pipeline._say("Reel tayyar. Library mein dekho.")
