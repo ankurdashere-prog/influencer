@@ -118,7 +118,7 @@ def _avatar_norm(a: dict | None) -> dict | None:
             return default
 
     sec = min(max(num("seconds", AVATAR_SECONDS), 4), 10)
-    pres = min(max(num("presenter", min(PRESENTER_SECONDS, sec - 2)), 2), sec - 2)
+    pres = min(max(num("presenter", min(PRESENTER_SECONDS, sec - 2)), 2), sec)  # sec = doctor poori clip bolte hain
     return {"name": clean("name", "Avatar", 60), "role": clean("role", "", 80),
             "gender": "female" if str(a.get("gender", "male")).lower().startswith("f") else "male",
             "look": clean("look", "", 300), "language": clean("language", "Hinglish (Hindi in Roman script)", 60),
@@ -133,11 +133,15 @@ def build_avatar_prompt(s: dict, a: dict) -> str:
         "Keep the exact same face, hairstyle, facial hair, skin tone, body, outfit, voice, background and lighting "
         f"as the avatar in this clip. Do not change anything about the person.{look}\n"
         f"Format: vertical 9:16, {a['seconds']} seconds, realistic phone-camera look, no subtitles, no text or logos added on screen.\n"
-        f"Seconds 0-{a['presenter']} (presenter on camera): {s['camera_angle']}. {s['action']}. "
-        f"{he} speaks to the camera in {a['language']}, clear natural voice, lips in sync: \"{s['presenter_line']}\"\n"
-        f"Seconds {a['presenter']}-{a['seconds']} (cutaway visuals, presenter not on screen): {s['visual']}. "
-        f"{his} voiceover continues in the exact same voice and tone: \"{s['voiceover_line']}\"\n"
-        "Same face and same voice in every clip. Wholesome and brand-safe."
+        + (f"Seconds 0-{a['seconds']} (presenter on camera for the whole clip, never leaves the frame): {s['camera_angle']}. "
+           f"{s['action']}. {he} speaks to the camera in {a['language']}, clear natural voice, lips in sync, speaking "
+           f"continuously until the last second: \"{s['presenter_line']}\"\n"
+           if a["presenter"] >= a["seconds"] else
+           f"Seconds 0-{a['presenter']} (presenter on camera): {s['camera_angle']}. {s['action']}. "
+           f"{he} speaks to the camera in {a['language']}, clear natural voice, lips in sync: \"{s['presenter_line']}\"\n"
+           f"Seconds {a['presenter']}-{a['seconds']} (cutaway visuals, presenter not on screen): {s['visual']}. "
+           f"{his} voiceover continues in the exact same voice and tone: \"{s['voiceover_line']}\"\n")
+        + "Same face and same voice in every clip. Wholesome and brand-safe."
     )
 
 
@@ -153,15 +157,22 @@ def _avatar_llm_prompt(topic: str | None, a: dict, n: int) -> str:
     lines += [
         f"Return ONE JSON object with keys: topic, hook_text, caption, hashtags, scenes. scenes = exactly {n} objects "
         "with keys camera_angle, action, presenter_line, visual, voiceover_line.",
-        f"- Each scene is ONE {a['seconds']}-second clip: seconds 0-{a['presenter']} the presenter speaks to camera "
-        f"(presenter_line), seconds {a['presenter']}-{a['seconds']} cutaway visuals while the same voice continues "
-        "(voiceover_line).",
-        f"- presenter_line: between {_line_bounds(a['presenter'], False)[0]} and {_line_bounds(a['presenter'], False)[1]} words, "
-        f"so the speaker keeps talking for the WHOLE {a['presenter']} seconds (never shorter, no pauses). voiceover_line: "
-        f"between {_line_bounds(a['seconds'] - a['presenter'], True)[0]} and {_line_bounds(a['seconds'] - a['presenter'], True)[1]} words "
-        "(speech is about 2.4 words per second). One complete idea, sentences must finish inside the scene.",
-        "- BOTH lines must be in natural Hinglish (Hindi in Roman script) like a doctor talking in India. Do not write "
-        "English sentences; only unavoidable terms (liposuction, surgery, skin) stay in English. Do not say any name.",
+        *([f"- Each scene is ONE {a['seconds']}-second clip where the presenter speaks to camera for the WHOLE clip. "
+           f"presenter_line: between {_line_bounds(a['seconds'], False)[0]} and {_line_bounds(a['seconds'], False)[1]} words "
+           "(speech is about 2.4 words per second), one complete idea that finishes inside the clip. voiceover_line: "
+           "empty string. (Cutaway visuals are added later by the editor.)",
+           "- BOTH lines must be in natural Hinglish (Hindi in Roman script) like a doctor talking in India. Do not write "
+           "English sentences; only unavoidable terms (liposuction, surgery, skin) stay in English. Do not say any name."]
+          if a["presenter"] >= a["seconds"] else
+          [f"- Each scene is ONE {a['seconds']}-second clip: seconds 0-{a['presenter']} the presenter speaks to camera "
+           f"(presenter_line), seconds {a['presenter']}-{a['seconds']} cutaway visuals while the same voice continues "
+           "(voiceover_line).",
+           f"- presenter_line: between {_line_bounds(a['presenter'], False)[0]} and {_line_bounds(a['presenter'], False)[1]} words, "
+           f"so the speaker keeps talking for the WHOLE {a['presenter']} seconds (never shorter, no pauses). voiceover_line: "
+           f"between {_line_bounds(a['seconds'] - a['presenter'], True)[0]} and {_line_bounds(a['seconds'] - a['presenter'], True)[1]} words "
+           "(speech is about 2.4 words per second). One complete idea, sentences must finish inside the scene.",
+           "- BOTH lines must be in natural Hinglish (Hindi in Roman script) like a doctor talking in India. Do not write "
+           "English sentences; only unavoidable terms (liposuction, surgery, skin) stay in English. Do not say any name."]),
         "- Scene 1 = scroll-stopping hook. Last scene = invite the viewer to ask a question or book a consultation.",
         "- camera_angle and action: simple (close-up, medium shot; small gesture, nod, smile). Do not describe the face.",
         "- visual: what the cutaway shows (clinic or lifestyle b-roll, hands, objects, text-free scenes). No faces.",
@@ -203,7 +214,10 @@ def _avatar_fallback(topic: str | None, a: dict, n: int) -> dict:
         row = list(base[i % len(base)])
         if use_short:
             row[4] = short[i % len(short)]
-        if a["presenter"] < 3.5 and len(row[2].split()) > 7:
+        if a["presenter"] >= a["seconds"]:  # doctor poori clip bolte hain: dono baatein ek line mein
+            row[2] = f"{row[2].rstrip('.')}. {short[i % len(short)]}"
+            row[4] = ""
+        elif a["presenter"] < 3.5 and len(row[2].split()) > 7:
             row[2] = ["Ek zaroori baat suniye.", "Ye baat samajh lijiye.", "Pehle sawal poochiye."][i % 3]
         scenes.append(dict(zip(("camera_angle", "action", "presenter_line", "visual", "voiceover_line"), row)))
     return {"topic": t[:80], "hook_text": f"{_cut_words(t, 28)}? JAANIYE", "caption": f"{t}\nAapka kya sawal hai?",
@@ -267,13 +281,17 @@ def _clean_avatar_scene(s, fb: dict, a: dict | None = None) -> dict:
     if _RISKY.search(out["presenter_line"] + " " + out["voiceover_line"] + " " + out["visual"]):
         out = dict(fb)  # risky wording: safe template line use karo
     if a:
-        for k in ("presenter_line", "voiceover_line"):  # English/ajeeb bhasha: Hinglish template line
-            if not _is_hinglish(out[k]):
+        full = a["presenter"] >= a["seconds"]  # doctor poori clip bolte hain, cutaway line nahi
+        for k in ("presenter_line",) if full else ("presenter_line", "voiceover_line"):
+            if not _is_hinglish(out[k]):  # English/ajeeb bhasha: Hinglish template line
                 out[k] = fb[k]
-        lo, hi = _line_bounds(a["presenter"], False)
+        lo, hi = _line_bounds(a["seconds"] if full else a["presenter"], False)
         out["presenter_line"] = _fit_line(out["presenter_line"], lo, hi, _PAD_PRES)
-        lo, hi = _line_bounds(a["seconds"] - a["presenter"], True)
-        out["voiceover_line"] = _fit_line(out["voiceover_line"], lo, hi, _PAD_VO)
+        if full:
+            out["voiceover_line"] = ""
+        else:
+            lo, hi = _line_bounds(a["seconds"] - a["presenter"], True)
+            out["voiceover_line"] = _fit_line(out["voiceover_line"], lo, hi, _PAD_VO)
     return out
 
 
@@ -361,7 +379,8 @@ def speech_bounds(path: Path, db: float = -32.0, min_sil: float = 0.12) -> tuple
     return (start, end) if end - start >= 0.3 else None
 
 
-def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg: dict | None = None) -> float:
+def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg: dict | None = None,
+               info: dict | None = None) -> float:
     """Clip ko 9:16 mein laata hai. Pro-style: awaaz ke shuru/aakhir ki lambi khamoshi (seam ka asli 'gap') kaat kar
     sirf chhota natural pause chhodta hai, ek-ek chhod kar halka punch-in zoom (jump-cut feel), awaaz ka volume
     barabar, aur bahut chhoti fade (click/pop nahi, par dip bhi nahi)."""
@@ -378,6 +397,8 @@ def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg
         head = tail = 0.0
     sp = min(max(float(cfg.get("clip_speed", 1.0)), 0.8), 1.5)
     dur = (full - head - tail) / sp  # output ki lambai (speed ke baad)
+    if info is not None:  # B-roll ka "kab se" asli clip ke second se output ke second mein badalne ke liye
+        info.update(head=head, speed=sp)
     z = float(cfg.get("punch_zoom", 1.08)) if idx % 2 == 1 else 1.0
     zw, zh = int(w * z) // 2 * 2, int(h * z) // 2 * 2
     vf = (f"scale={zw}:{zh}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,setpts=PTS/{sp:.4f},fps={fps},format=yuv420p")
@@ -463,8 +484,91 @@ def revoice(src: Path, dst: Path, convert, say=None) -> Path:
     return dst
 
 
+BROLL_EFFECTS = {"slow_push": "Slow push (dheere zoom)", "zoom_in": "Zoom in", "zoom_out": "Zoom out",
+                 "pan_left": "Pan left", "pan_right": "Pan right", "pan_up": "Pan up", "pan_down": "Pan down",
+                 "blur_bg": "Poori photo + blur background", "static": "Bina hilne wali"}
+BROLL_TRANSITIONS = {"fade": "Fade", "slide": "Slide in", "cut": "Seedha cut"}
+_IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+_VID_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
+BROLL_EXT = _IMG_EXT | _VID_EXT
+
+
+def _zoompan(effect: str, n: int) -> tuple[str, str, str]:
+    """Photo ke effect ke zoom/x/y (ffmpeg zoompan). `on` = frame number, n = kul frames."""
+    n = max(n, 1)
+    cx, cy = "(iw-iw/zoom)/2", "(ih-ih/zoom)/2"
+    p = f"on/{n}"
+    table = {
+        "slow_push": (f"1+0.10*{p}", cx, cy),
+        "zoom_in": (f"1+0.20*{p}", cx, cy),
+        "zoom_out": (f"1.20-0.20*{p}", cx, cy),
+        "pan_left": ("1.25", f"(iw-iw/zoom)*(1-{p})", cy),
+        "pan_right": ("1.25", f"(iw-iw/zoom)*{p}", cy),
+        "pan_up": ("1.25", cx, f"(ih-ih/zoom)*(1-{p})"),
+        "pan_down": ("1.25", cx, f"(ih-ih/zoom)*{p}"),
+        "static": ("1", cx, cy),
+        "blur_bg": (f"1+0.06*{p}", cx, cy),
+    }
+    return table.get(effect, table["slow_push"])
+
+
+def _prep_image(src: Path, out: Path, w: int, h: int, blur_bg: bool) -> Path:
+    """Photo ko w x h canvas par ek baar taiyar karta hai (cover-crop, ya poori photo + blur background)."""
+    from PIL import Image, ImageFilter, ImageOps
+    im = ImageOps.exif_transpose(Image.open(src)).convert("RGB")
+    cover = ImageOps.fit(im, (w, h), Image.LANCZOS)
+    if blur_bg:
+        small = cover.resize((max(w // 8, 2), max(h // 8, 2)), Image.BILINEAR).filter(ImageFilter.GaussianBlur(3))
+        canvas = small.resize((w, h), Image.BILINEAR)
+        fit = ImageOps.contain(im, (w, h), Image.LANCZOS)
+        canvas.paste(fit, ((w - fit.width) // 2, (h - fit.height) // 2))
+        cover = canvas
+    cover.save(out)
+    return out
+
+
+def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | None, effect: str, transition: str,
+                w: int, h: int, fps: int, fade: float = 0.3) -> Path:
+    """Clip (base) ke video par `start` second se (`end` tak, warna clip ke aakhir tak) photo/video dikhata hai.
+    Clip ki awaaz ko haath nahi lagata, isliye doctor ki awaaz (aur lip-sync) wahi rehti hai."""
+    dur = media_duration(base)
+    start = min(max(float(start), 0.0), max(dur - 0.5, 0.0))
+    stop = dur if end is None or end > dur - 0.15 or end < start + 0.5 else float(end)
+    length = max(stop - start, 0.5)
+    fade = min(fade, length / 3)
+    is_img = media.suffix.lower() in _IMG_EXT
+    if is_img:
+        z, x, y = _zoompan(effect, int(length * fps))
+        prepared = _prep_image(media, dst.with_suffix(".bg.png"), int(w * 1.5) // 2 * 2, int(h * 1.5) // 2 * 2,
+                               effect == "blur_bg")
+        chain = f"zoompan=z='{z}':x='{x}':y='{y}':d=1:s={w}x{h}:fps={fps},setsar=1,format=yuva420p"
+        src_args = ["-loop", "1", "-framerate", str(fps), "-t", f"{length:.3f}", "-i", str(prepared)]
+    else:
+        chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={fps},"
+                 "format=yuva420p")
+        src_args = ["-stream_loop", "-1", "-t", f"{length:.3f}", "-i", str(media)]
+    if transition == "fade":
+        chain += f",fade=t=in:st=0:d={fade:.2f}:alpha=1"
+        if stop < dur - 0.01:  # beech mein khatam ho to wapas doctor par fade
+            chain += f",fade=t=out:st={max(length - fade, 0):.2f}:d={fade:.2f}:alpha=1"
+    chain += f",setpts=PTS-STARTPTS+{start:.3f}/TB"
+    if transition == "slide":
+        ox = f"x='if(lt(t,{start:.3f}+{fade:.2f}),W*(1-(t-{start:.3f})/{fade:.2f}),0)':y=0:"
+    else:
+        ox = ""
+    fc = (f"[1:v]{chain}[b];[0:v][b]overlay={ox}enable='between(t,{start:.3f},{stop:.3f})':eof_action=pass:"
+          "repeatlast=0[v]")
+    run_ff(["-i", str(base), *src_args, "-filter_complex", fc, "-map", "[v]", "-map", "0:a?", "-c:a", "copy",
+            "-threads", "1", "-filter_threads", "1", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-x264-params", "rc-lookahead=8:ref=2", "-pix_fmt", "yuv420p", "-t", f"{dur:.3f}", str(dst)])
+    if is_img:
+        dst.with_suffix(".bg.png").unlink(missing_ok=True)
+    return dst
+
+
 def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, music: Path | None = None,
-          say=print, hook: str = "", end_text: str = "", voice: Path | None = None, convert=None) -> Path:
+          say=print, hook: str = "", end_text: str = "", voice: Path | None = None, convert=None,
+          broll: dict | None = None) -> Path:
     w, h, fps = int(video_cfg.get("width", 1080)), int(video_cfg.get("height", 1920)), int(video_cfg.get("fps", 30))
     names, words, t0 = [], [], 0.0
     if convert:
@@ -481,7 +585,21 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
             say(f"Clip {i + 1}: awaaz clone voice mein badli ja rahi hai...")
             src = revoice(src, work / f"vc_{i}.mp4", convert, say)
         dst = work / f"norm_{i}.mp4"
-        dur = _normalize(src, dst, w, h, fps, i, video_cfg)
+        info: dict = {}
+        dur = _normalize(src, dst, w, h, fps, i, video_cfg, info)
+        bl = (broll or {}).get(i)
+        if bl:
+            head, sp = info.get("head", 0.0), info.get("speed", 1.0) or 1.0
+            b_start = (float(bl["start"]) - head) / sp
+            b_end = None if bl.get("end") is None else (float(bl["end"]) - head) / sp
+            if b_start >= dur - 0.5:
+                say(f"Clip {i + 1}: B-roll ka start ({bl['start']}s) clip ke aakhir ke bahut paas hai, chhod diya.")
+            else:
+                say(f"Clip {i + 1}: apni photo/video {max(bl['start'], 0):g} second se laga raha hu...")
+                out_b = work / f"br_{i}.mp4"
+                apply_broll(dst, out_b, bl["path"], max(b_start, 0.0), b_end, bl.get("effect", "slow_push"),
+                            bl.get("transition", "fade"), w, h, fps)
+                dst = out_b
         names.append(dst.name)
         text = (dialogues[i] if i < len(dialogues) else "").strip()
         if text:
