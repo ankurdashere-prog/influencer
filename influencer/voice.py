@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 
 import requests
@@ -43,13 +44,43 @@ def _fail(r: requests.Response, what: str) -> VoiceError:
     return VoiceError(f"ElevenLabs {what} fail ({r.status_code}): {msg}")
 
 
-def load_voices() -> list[dict]:
+_cache: dict = {"t": 0.0, "v": None}
+
+
+def _local_voices() -> list[dict]:
     if VOICES_FILE.exists():
         try:
             return [v for v in json.loads(VOICES_FILE.read_text(encoding="utf-8")) if isinstance(v, dict)]
         except json.JSONDecodeError:
             return []
     return []
+
+
+def _remote_voices() -> list[dict]:
+    """ElevenLabs account ki apni clone ki hui voices (restart ke baad bhi wahi rehti hain)."""
+    r = requests.get(f"{API}/v2/voices", headers=_headers(), timeout=20,
+                     params={"category": "cloned", "voice_type": "personal", "page_size": 100})
+    if r.status_code != 200:
+        raise _fail(r, "voice list")
+    out = []
+    for v in r.json().get("voices") or []:
+        if isinstance(v, dict) and v.get("voice_id"):
+            name = str(v.get("name") or v["voice_id"]).replace(" (client voice)", "").strip()[:60]
+            out.append({"voice_id": v["voice_id"], "name": name, "provider": "elevenlabs", "source": "elevenlabs"})
+    return out
+
+
+def load_voices(force: bool = False) -> list[dict]:
+    """ElevenLabs se list (30 sec cache). Wahan na pahunch paye to local file ki list."""
+    if enabled():
+        if not force and _cache["v"] is not None and time.time() - _cache["t"] < 30:
+            return _cache["v"]
+        try:
+            _cache["v"], _cache["t"] = _remote_voices(), time.time()
+            return _cache["v"]
+        except Exception as e:  # noqa: BLE001 - network/key dikkat: local list par chalo
+            print(f"[voice] ElevenLabs list nahi mili: {str(e)[:150]}")
+    return _local_voices()
 
 
 def _save(items: list[dict]) -> None:
@@ -81,10 +112,11 @@ def clone(name: str, samples: list[tuple[str, bytes, str]], consent: bool) -> di
     vid = r.json().get("voice_id")
     if not vid:
         raise VoiceError("ElevenLabs ne voice_id nahi diya.")
-    items = [v for v in load_voices() if v.get("voice_id") != vid]
+    items = [v for v in _local_voices() if v.get("voice_id") != vid]
     rec = {"voice_id": vid, "name": name, "provider": "elevenlabs", "consent": True, "created": now_ist().isoformat()}
     items.append(rec)
     _save(items)
+    _cache["v"] = None
     return rec
 
 
@@ -107,14 +139,15 @@ def speak(text: str, voice_id: str, out: Path) -> Path:
 
 
 def delete(voice_id: str) -> None:
-    items = load_voices()
-    if voice_id not in {v.get("voice_id") for v in items}:
+    items = _local_voices()
+    if voice_id not in {v.get("voice_id") for v in load_voices(force=True)} | {v.get("voice_id") for v in items}:
         raise VoiceError("Voice nahi mili.")
     if enabled():
         r = requests.delete(f"{API}/v1/voices/{voice_id}", headers=_headers(), timeout=60)
         if r.status_code not in (200, 404):
             raise _fail(r, "delete")
     _save([v for v in items if v.get("voice_id") != voice_id])
+    _cache["v"] = None
 
 
 def convert(audio: Path, voice_id: str, out: Path) -> Path:
