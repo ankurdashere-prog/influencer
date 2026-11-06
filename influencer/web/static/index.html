@@ -103,7 +103,7 @@
     <h2>Clip Studio (test)</h2>
     <p class="mute">1) Script aur scene-wise prompts banao. 2) Har prompt apne video tool (jaise Flow) mein avatar image ke saath paste karke 4 second ka clip banao. 3) Clips yahan upload karo, hum jodkar captions aur music ke saath reel bana denge.</p>
     <p id="avDl"><a href="/character-files/reference.png" download="avatar.png">Avatar image download karo</a> <span class="mute">(video tool mein upload karne ke liye; Character tab mein pehle chehra set karo)</span></p>
-    <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="avOn"> Avatar mode (client ka asli avatar: har scene 10 sec = 4 sec avatar bolta hai + 6 sec visuals)</label>
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="avOn"> Avatar mode (client ka asli avatar: har scene mein pehle kuch second avatar bolta hai, phir visuals)</label>
     <div id="avBox" class="hide">
       <label for="avName">Avatar ka naam (jaise: Dr. Ashish)</label>
       <input type="text" id="avName" maxlength="60">
@@ -113,8 +113,12 @@
       <select id="avGender"><option value="male">Purush</option><option value="female">Mahila</option></select>
       <label for="avLook">Look (kapde aur background, jaisa avatar mein hai)</label>
       <input type="text" id="avLook" maxlength="300" placeholder="jaise: black scrub top, red wall background, round mirror">
-      <label for="avScenes">Kitne scenes (har scene 10 sec)</label>
-      <select id="avScenes"><option value="2">2 (~20 sec)</option><option value="3" selected>3 (~30 sec)</option><option value="4">4 (~40 sec)</option><option value="5">5 (~50 sec)</option></select>
+      <label for="avScenes">Kitne scenes (1 se 6)</label>
+      <input type="number" id="avScenes" min="1" max="6" value="2">
+      <label for="avSec">Har scene kitne second ka (4 se 10; Flow mein 8 sec free hai)</label>
+      <input type="number" id="avSec" min="4" max="10" value="8">
+      <label for="avPres">Doctor kitne second camera par bolenge (baaki visuals + voiceover)</label>
+      <input type="number" id="avPres" min="2" max="8" value="4">
       <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="avConsent"> Is insaan ne chehre aur awaaz ke use ki likhit permission di hai, aur har script wo khud approve karega</label>
       <p class="mute">Flow mein: Video, Ingredients mein avatar attach karo, model Omni Flash, 10 sec, 9:16, phir scene ka poora prompt paste karo. Post par "AI-generated" label zaroor lagao.</p>
     </div>
@@ -277,7 +281,7 @@ $('#stScript').onclick=async()=>{const b=$('#stScript');
     if(!$('#avConsent').checked)return toast('Pehle consent checkbox tick karo');
     if(!$('#avName').value.trim())return toast('Avatar ka naam likho');
     body.avatar={name:$('#avName').value,role:$('#avRole').value,gender:$('#avGender').value,look:$('#avLook').value,
-      scenes:Number($('#avScenes').value),consent:true};
+      scenes:Number($('#avScenes').value),seconds:Number($('#avSec').value),presenter:Number($('#avPres').value),consent:true};
   }
   b.disabled=true;
   try{studio=await post('/api/clips/script',body);renderStudio();if(studio.note)toast(studio.note)}
