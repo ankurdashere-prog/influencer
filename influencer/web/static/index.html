@@ -137,7 +137,7 @@
     <label for="stVoiceChange">Reel ki awaaz: ElevenLabs clone voice (Flow wali awaaz hat jayegi, lip-sync bacha rehta hai, ElevenLabs credits kharch hote hain)</label>
     <select id="stVoiceChange"><option value="">Nahi, clip ki original awaaz rakho</option></select>
     <label for="stVoiceFile">Clone voice (ElevenLabs ki mp3) clips ki awaaz ki jagah lagao (optional)</label>
-    <input type="file" id="stVoiceFile" accept="audio/*">
+    <div class="row"><input type="file" id="stVoiceFile" accept="audio/*"> <button class="btn alt" id="stVoiceClear" type="button">File hatao</button></div>
     <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="stUseVoice"> Voice Lab ki abhi banayi hui awaaz use karo <span class="mute" id="stUseVoiceName"></span></label>
     <p class="mute">Dhyan: Flow clip mein doctor ke hont Flow ki apni awaaz par hilte hain. Clone awaaz lagane par on-camera hisse mein lip-sync thoda alag dikh sakta hai. Cutaway (visuals) wale hisse mein koi dikkat nahi.</p>
     <label for="stMusicFile">Background music upload karo (mp3/m4a/wav, optional)</label>
@@ -310,7 +310,10 @@ $('#stGo').onclick=async()=>{
   if(vf)fd.append('voice_file',vf);
   else if($('#stUseVoice').checked){if(!lastVoice)return toast('Pehle Voice Lab mein Awaaz banao');fd.append('voice_name',lastVoice)}
   const vc=$('#stVoiceChange').value;
-  if(vc){if(vf||$('#stUseVoice').checked)return toast('Clone voice ka ek hi tareeka chuno');fd.append('voice_id',vc)}
+  if(vc){
+    if(vf)return toast('"Clone voice upload karo" mein file chuni hui hai. "File hatao" dabao, ya dropdown mein "Nahi" chuno.');
+    if($('#stUseVoice').checked)return toast('"Voice Lab ki abhi banayi hui awaaz use karo" ka tick hatao, ya dropdown mein "Nahi" chuno.');
+    fd.append('voice_id',vc)}
   const b=$('#stGo');b.disabled=true;
   try{const r=await fetch('/api/clips/merge',{method:'POST',body:fd});
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||r.statusText)}
@@ -402,6 +405,7 @@ async function vlLoad(){
   }catch(e){toast('Error: '+e.message)}
 }
 $('#stVoiceChange').onchange=()=>{svTouched=true};
+$('#stVoiceClear').onclick=()=>{$('#stVoiceFile').value='';toast('File hat gayi')};
 vlLoad();
 $('#vlEleven').onchange=()=>{const on=$('#vlEleven').checked;$('#vlElevenBox').classList.toggle('hide',!on);$('#vlOpenBox').classList.toggle('hide',on);if(on)vlLoad()};
 $('#vlClone').onclick=async()=>{const b=$('#vlClone');
