@@ -117,10 +117,10 @@
       <input type="number" id="avScenes" min="1" max="6" value="2">
       <label for="avSec">Har scene kitne second ka (4 se 10; Flow mein 8 sec free hai)</label>
       <input type="number" id="avSec" min="4" max="10" value="8">
-      <label for="avPres">Doctor kitne second camera par bolenge (baaki visuals + voiceover)</label>
-      <input type="number" id="avPres" min="2" max="8" value="4">
+      <label for="avPres">Doctor kitne second camera par bolenge (baaki visuals + voiceover). Poori clip ke barabar likho (jaise 8) to doctor poore time bolenge, aur visuals tum neeche "Apni photo/video" se lagaoge.</label>
+      <input type="number" id="avPres" min="2" max="10" value="4">
       <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="avConsent"> Is insaan ne chehre aur awaaz ke use ki likhit permission di hai, aur har script wo khud approve karega</label>
-      <p class="mute">Flow mein: Video, Ingredients mein avatar attach karo, model Omni Flash, 10 sec, 9:16, phir scene ka poora prompt paste karo. Post par "AI-generated" label zaroor lagao.</p>
+      <p class="mute">Flow mein: Video, Ingredients mein avatar attach karo, model Omni Flash, 8 sec (jitne second Seconds mein likhe hain), 9:16, phir scene ka poora prompt paste karo. Post par "AI-generated" label zaroor lagao.</p>
     </div>
     <label for="stTopic">Topic (khaali chhodo to AI sochega)</label>
     <input type="text" id="stTopic" maxlength="200" placeholder="jaise: Morning routine tips">
@@ -284,8 +284,25 @@ $('#stScript').onclick=async()=>{const b=$('#stScript');
       scenes:Number($('#avScenes').value),seconds:Number($('#avSec').value),presenter:Number($('#avPres').value),consent:true};
   }
   b.disabled=true;
-  try{studio=await post('/api/clips/script',body);renderStudio();if(studio.note)toast(studio.note)}
+  try{studio=await post('/api/clips/script',body);if(body.avatar){studio.seconds=body.avatar.seconds;studio.presenter=body.avatar.presenter}renderStudio();if(studio.note)toast(studio.note)}
   catch(e){toast('Error: '+e.message)}b.disabled=false};
+const BR_FX=[['slow_push','Slow push (dheere zoom)'],['zoom_in','Zoom in'],['zoom_out','Zoom out'],['pan_left','Pan left'],['pan_right','Pan right'],['pan_up','Pan up'],['pan_down','Pan down'],['blur_bg','Poori photo + blur background'],['static','Bina hilne wali']];
+const BR_TR=[['fade','Fade'],['slide','Slide in'],['cut','Seedha cut']];
+function brollBox(i){
+  const sec=studio.seconds||8,pres=studio.presenter||4;
+  const def=pres>=sec?4:pres;
+  const num=(id,v,ph)=>el('input',{type:'number',id,min:'0',max:'30',step:'0.5',value:v,placeholder:ph||'',style:'width:90px'});
+  const sel=(id,opts)=>{const x=el('select',{id});opts.forEach(o=>x.append(el('option',{value:o[0]},o[1])));return x};
+  return el('details',{style:'margin-top:8px'},el('summary',{},'Apni photo ya video lagao (optional)'),
+    el('label',{},'Photo (jpg, png, webp) ya video (mp4, mov). Doctor ki awaaz chalti rehti hai, sirf screen par ye dikhega.'),
+    el('input',{type:'file',accept:'image/*,video/*',id:'br'+i}),
+    el('div',{class:'row',style:'gap:12px;align-items:end;flex-wrap:wrap'},
+      el('div',{},el('label',{},'Kab se (second)'),num('brs'+i,def)),
+      el('div',{},el('label',{},'Kab tak (khaali = clip ke aakhir tak)'),num('bre'+i,'', 'aakhir')),
+      el('div',{},el('label',{},'Photo ka effect'),sel('brx'+i,BR_FX)),
+      el('div',{},el('label',{},'Aane ka tareeka'),sel('brt'+i,BR_TR))),
+    el('div',{class:'mute'},'"Kab se" Flow ki asli clip ke second hain (jaise 6 = 6th second se). Chhoti clip par photo 1 se 2 second se kam na rakho.'));
+}
 function renderStudio(){
   const box=$('#stScenes');box.replaceChildren();
   studio.scenes.forEach((s,i)=>{
@@ -293,7 +310,8 @@ function renderStudio(){
     box.append(el('div',{class:'card'},el('b',{},'Scene '+(i+1)),ta,
       el('div',{class:'row'},el('button',{class:'btn alt',onclick:async()=>{try{await navigator.clipboard.writeText(ta.value);toast('Copy ho gaya')}catch{ta.select();toast('Select ho gaya, Ctrl+C dabao')}}},'Prompt copy karo')),
       el('label',{},'Caption text (jo bola jayega)'),el('input',{type:'text',id:'dlg'+i,value:s.dialogue}),
-      el('label',{},'Is scene ka clip (video file)'),el('input',{type:'file',accept:'video/*',id:'clip'+i})));
+      el('label',{},'Is scene ka clip (video file)'),el('input',{type:'file',accept:'video/*',id:'clip'+i}),
+      brollBox(i)));
   });
   $('#stHook').value=studio.hook_text||'';
   $('#stMerge').classList.remove('hide');
@@ -301,8 +319,13 @@ function renderStudio(){
 $('#stMusicVol').oninput=()=>$('#stMusicVolVal').textContent=$('#stMusicVol').value;
 $('#stGo').onclick=async()=>{
   const fd=new FormData(),dl=[];
-  studio.scenes.forEach((s,i)=>{const f=$('#clip'+i).files[0];if(f){fd.append('clips',f);dl.push($('#dlg'+i).value)}});
+  const bm=[];
+  studio.scenes.forEach((s,i)=>{const f=$('#clip'+i).files[0];if(f){fd.append('clips',f);dl.push($('#dlg'+i).value);
+    const bf=$('#br'+i).files[0];
+    if(bf){fd.append('broll_files',bf);bm.push({clip:dl.length-1,start:Number($('#brs'+i).value||0),end:$('#bre'+i).value===''?null:Number($('#bre'+i).value),effect:$('#brx'+i).value,transition:$('#brt'+i).value})}}
+    else if($('#br'+i).files[0])toast('Scene '+(i+1)+': B-roll tabhi lagegi jab is scene ka clip bhi upload ho.')});
   if(!dl.length)return toast('Kam se kam ek clip upload karo');
+  fd.append('broll_meta',JSON.stringify(bm));
   fd.append('dialogues',JSON.stringify(dl));fd.append('topic',studio.topic);fd.append('caption',studio.caption);
   fd.append('music',$('#stMusic').checked?'1':'0');fd.append('speed',$('#stSpeed').value);fd.append('hook_text',$('#stHook').value);fd.append('end_text',$('#stEnd').value);
   fd.append('music_volume',String($('#stMusicVol').value/100));const mf=$('#stMusicFile').files[0];if(mf)fd.append('music_file',mf);
