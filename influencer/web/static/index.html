@@ -130,7 +130,7 @@
     <input type="text" id="stEnd" maxlength="60" value="Follow karo, aur reels ke liye">
     <label for="stSpeed">Speed (thodi tez reel zyada engaging lagti hai)</label>
     <select id="stSpeed"><option value="1.0">Normal (1.0x)</option><option value="1.05">Halki tez (1.05x)</option><option value="1.1" selected>Thodi tez (1.1x)</option><option value="1.15">Tez (1.15x)</option><option value="1.25">Bahut tez (1.25x)</option></select>
-    <label for="stVoiceChange">Clips ki awaaz ElevenLabs clone voice mein badlo (lip-sync bacha rehta hai, ElevenLabs credits kharch hote hain)</label>
+    <label for="stVoiceChange">Reel ki awaaz: ElevenLabs clone voice (Flow wali awaaz hat jayegi, lip-sync bacha rehta hai, ElevenLabs credits kharch hote hain)</label>
     <select id="stVoiceChange"><option value="">Nahi, clip ki original awaaz rakho</option></select>
     <label for="stVoiceFile">Clone voice (ElevenLabs ki mp3) clips ki awaaz ki jagah lagao (optional)</label>
     <input type="file" id="stVoiceFile" accept="audio/*">
@@ -384,7 +384,7 @@ $('#addBrand').onclick=async()=>{const n=$('#newBrand').value.trim().toLowerCase
 loadCreate();
 
 // Voice Lab
-let lastVoice='';
+let lastVoice='',svTouched=false;
 async function vlLoad(){
   try{const d=await api('/api/voice');
     $('#vlKey').textContent=d.elevenlabs?'ElevenLabs key mili: ready.':'ELEVENLABS_API_KEY set nahi hai (Render > Environment mein daalo).';
@@ -392,10 +392,12 @@ async function vlLoad(){
     const sv=$('#stVoiceChange'),keep=sv.value;sv.length=1;
     d.voices.forEach(v=>sv.append(el('option',{value:v.voice_id},'Badlo: '+v.name)));
     if([...sv.options].some(o=>o.value===keep))sv.value=keep;
+    else if(d.voices.length&&!svTouched)sv.value=d.voices[d.voices.length-1].voice_id;
     d.voices.forEach(v=>sel.append(el('option',{value:v.voice_id},v.name)));
     if(!d.voices.length)sel.append(el('option',{value:''},'(pehle clone banao)'));
   }catch(e){toast('Error: '+e.message)}
 }
+$('#stVoiceChange').onchange=()=>{svTouched=true};
 vlLoad();
 $('#vlEleven').onchange=()=>{const on=$('#vlEleven').checked;$('#vlElevenBox').classList.toggle('hide',!on);$('#vlOpenBox').classList.toggle('hide',on);if(on)vlLoad()};
 $('#vlClone').onclick=async()=>{const b=$('#vlClone');
