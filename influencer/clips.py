@@ -326,6 +326,14 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
           say=print, hook: str = "", end_text: str = "", voice: Path | None = None, convert=None) -> Path:
     w, h, fps = int(video_cfg.get("width", 1080)), int(video_cfg.get("height", 1920)), int(video_cfg.get("fps", 30))
     names, words, t0 = [], [], 0.0
+    if convert:
+        silent = [c.name for c in clips if not has_audio(c)]
+        say("Awaaz: ElevenLabs clone voice (har clip ki awaaz badli jayegi)."
+            + (f" Bina awaaz wali clips: {len(silent)} (inki awaaz nahi badlegi)." if silent else ""))
+    elif voice:
+        say("Awaaz: Voice Lab ki alag audio (clips ki awaaz hatai jayegi).")
+    else:
+        say("Awaaz: clip ki original (Flow wali) awaaz. Clone voice ke liye dropdown mein 'Badlo' chuno.")
     for i, src in enumerate(clips):
         say(f"Clip {i + 1}/{len(clips)} taiyar ho rahi hai...")
         if convert and has_audio(src):
