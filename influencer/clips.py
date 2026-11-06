@@ -91,6 +91,15 @@ _RISKY = re.compile(r"guarantee|100\s*%|permanent|\bcure\b|chamatkar|risk[- ]?fr
                     re.I)
 
 
+def _cut_words(t: str, n: int) -> str:
+    """Shabd beech mein kaate bina n characters tak."""
+    t = t.strip()
+    if len(t) <= n:
+        return t
+    cut = t[:n].rsplit(" ", 1)[0]
+    return cut or t[:n]
+
+
 def _avatar_norm(a: dict | None) -> dict | None:
     if not a or not isinstance(a, dict):
         return None
@@ -147,9 +156,12 @@ def _avatar_llm_prompt(topic: str | None, a: dict, n: int) -> str:
         f"- Each scene is ONE {a['seconds']}-second clip: seconds 0-{a['presenter']} the presenter speaks to camera "
         f"(presenter_line), seconds {a['presenter']}-{a['seconds']} cutaway visuals while the same voice continues "
         "(voiceover_line).",
-        f"- presenter_line: max {max(round(a['presenter'] * 2.4), 4)} words. voiceover_line: max "
-        f"{max(round((a['seconds'] - a['presenter']) * 2.4), 4)} words (speech is about 2.4 words per second). One "
-        "complete idea, sentences must finish inside the scene.",
+        f"- presenter_line: between {_line_bounds(a['presenter'], False)[0]} and {_line_bounds(a['presenter'], False)[1]} words, "
+        f"so the speaker keeps talking for the WHOLE {a['presenter']} seconds (never shorter, no pauses). voiceover_line: "
+        f"between {_line_bounds(a['seconds'] - a['presenter'], True)[0]} and {_line_bounds(a['seconds'] - a['presenter'], True)[1]} words "
+        "(speech is about 2.4 words per second). One complete idea, sentences must finish inside the scene.",
+        "- BOTH lines must be in natural Hinglish (Hindi in Roman script) like a doctor talking in India. Do not write "
+        "English sentences; only unavoidable terms (liposuction, surgery, skin) stay in English. Do not say any name.",
         "- Scene 1 = scroll-stopping hook. Last scene = invite the viewer to ask a question or book a consultation.",
         "- camera_angle and action: simple (close-up, medium shot; small gesture, nod, smile). Do not describe the face.",
         "- visual: what the cutaway shows (clinic or lifestyle b-roll, hands, objects, text-free scenes). No faces.",
@@ -166,8 +178,8 @@ def _avatar_fallback(topic: str | None, a: dict, n: int) -> dict:
     t = (topic or "ek zaroori jaankari")[:60]
     nm = a["name"]
     base = [
-        ("Close-up, eye level", "Smiles and gives a small wave",
-         f"Namaste, main {nm}. Aaj baat {t[:34]} ki.", "Clean, bright clinic reception, soft daylight, hands arranging papers",
+        ("Close-up, eye level", "Smiles slightly, no wave",
+         f"Namaste, aaj ek zaroori baat {t[:34]} ke baare mein.", "Clean, bright clinic reception, soft daylight, hands arranging papers",
          "Sahi jaankari hi pehla kadam hai, aur galat jaankari se bachna zaroori hai."),
         ("Medium shot, slightly low angle", "Gestures with one hand while explaining",
          "Sabse pehle ek baat samajh lijiye.", "Close-up of a notebook and pen on a desk, warm light",
@@ -182,9 +194,9 @@ def _avatar_fallback(topic: str | None, a: dict, n: int) -> dict:
          "Aapka sawal kya hai?", "Phone showing a chat window, text-free, soft light",
          "Comment mein apna sawal likhiye, ya consultation ke liye clinic se baat kijiye."),
     ]
-    short = ["Sahi jaankari hi pehla kadam hai.", "Har insaan ka case alag hota hai.",
-             "Apne doctor se poori baat karein.", "Soch samajh kar hi kadam uthaiye.",
-             "Apna sawal comment mein likhiye."]
+    short = ["Sahi jaankari pehla kadam hai.", "Har case alag hota hai.",
+             "Doctor se poori baat karein.", "Soch samajh kar kadam uthaiye.",
+             "Apna sawal comment karein."]
     use_short = (a["seconds"] - a["presenter"]) < 5.5
     scenes = []
     for i in range(n):
@@ -194,18 +206,74 @@ def _avatar_fallback(topic: str | None, a: dict, n: int) -> dict:
         if a["presenter"] < 3.5 and len(row[2].split()) > 7:
             row[2] = ["Ek zaroori baat suniye.", "Ye baat samajh lijiye.", "Pehle sawal poochiye."][i % 3]
         scenes.append(dict(zip(("camera_angle", "action", "presenter_line", "visual", "voiceover_line"), row)))
-    return {"topic": t[:80], "hook_text": f"{t[:28]}? JAANIYE", "caption": f"{t}\nAapka kya sawal hai?",
+    return {"topic": t[:80], "hook_text": f"{_cut_words(t, 28)}? JAANIYE", "caption": f"{t}\nAapka kya sawal hai?",
             "hashtags": ["education", "reels"], "scenes": scenes}
 
 
 _AV_KEYS = ("camera_angle", "action", "presenter_line", "visual", "voiceover_line")
 
 
-def _clean_avatar_scene(s, fb: dict) -> dict:
+_HINDI_MARK = set("hai hain ki ke ka ko se mein me aur par ya nahi na ho hota hoti hote kar karna karein kijiye "
+                  "kijie liye lijiye zaroori sahi jaankari baat apne aap aapka aapko ek koi kuch jo ye wo isse jisme "
+                  "bahut sabse pehle phir bhi hi tak sakta sakte samajh poochiye poochein doctor se".split())
+_PAD_PRES = ["Doctor se zaroor poochiye.", "Sahi salah zaroori hai.", "Soch samajh kar faisla lijiye."]
+_PAD_VO = ["Sahi salah zaroori hai.", "Doctor se baat kijiye.", "Soch samajh kar kadam uthaiye."]
+
+
+def _is_hinglish(t: str) -> bool:
+    w = re.findall(r"[a-z]+", t.lower())
+    return len(w) < 3 or any(x in _HINDI_MARK for x in w)
+
+
+def _end(t: str) -> str:
+    t = t.strip().rstrip(",;:-")
+    return t if t[-1:] in ".?!" else t + "."
+
+
+_DANGLE = {"aur", "ki", "ke", "ka", "ko", "se", "mein", "me", "jo", "ya", "par", "ek", "jisme", "toh", "to", "ki"}
+
+
+def _fit_line(text: str, lo: int, hi: int, pads: list[str]) -> str:
+    """Line ko bolne ke time ke hisaab se lo..hi shabdon ke beech rakho (na bahut chhoti, na bahut lambi)."""
+    text = _end(text)
+    for pad in pads:
+        if len(text.split()) >= lo:
+            break
+        if len(text.split()) + len(pad.split()) <= hi:  # poora vakya hi jodo, aadha nahi
+            text = f"{text} {pad}"
+    w = text.split()
+    if len(w) > hi:
+        cut = " ".join(w[:hi])
+        for mark in (".", "?", "!", ","):  # pehle poora vakya / comma tak kaato
+            i = cut.rfind(mark)
+            if i != -1 and len(cut[:i].split()) >= lo:
+                cut = cut[:i]
+                break
+        words = cut.split()
+        while len(words) > 3 and words[-1].lower().strip(".,;") in _DANGLE:  # "... aur." jaisa adhura ant nahi
+            words.pop()
+        text = _end(" ".join(words))
+    return text
+
+
+def _line_bounds(sec: float, voice: bool) -> tuple[int, int]:
+    lo_rate = 1.6 if voice else 2.0
+    return max(3, round(sec * lo_rate)), max(4, round(sec * 2.4))
+
+
+def _clean_avatar_scene(s, fb: dict, a: dict | None = None) -> dict:
     s = s if isinstance(s, dict) else {}
     out = {k: re.sub(r"\s+", " ", str(s.get(k) or fb[k])).strip() for k in _AV_KEYS}
     if _RISKY.search(out["presenter_line"] + " " + out["voiceover_line"] + " " + out["visual"]):
-        return dict(fb)  # risky wording: safe template line use karo
+        out = dict(fb)  # risky wording: safe template line use karo
+    if a:
+        for k in ("presenter_line", "voiceover_line"):  # English/ajeeb bhasha: Hinglish template line
+            if not _is_hinglish(out[k]):
+                out[k] = fb[k]
+        lo, hi = _line_bounds(a["presenter"], False)
+        out["presenter_line"] = _fit_line(out["presenter_line"], lo, hi, _PAD_PRES)
+        lo, hi = _line_bounds(a["seconds"] - a["presenter"], True)
+        out["voiceover_line"] = _fit_line(out["voiceover_line"], lo, hi, _PAD_VO)
     return out
 
 
@@ -223,7 +291,7 @@ def _make_avatar_script(topic: str | None, a: dict, offline: bool) -> dict:
     scenes = []
     for i in range(n):
         src = raw["scenes"][i] if i < len(raw["scenes"]) else {}
-        sc = _clean_avatar_scene(src, fb["scenes"][i])
+        sc = _clean_avatar_scene(src, fb["scenes"][i], a)
         sc["dialogue"] = f"{sc['presenter_line']} {sc['voiceover_line']}".strip()
         sc["prompt"] = build_avatar_prompt(sc, a)
         scenes.append(sc)
@@ -328,14 +396,67 @@ def _normalize(src: Path, dst: Path, w: int, h: int, fps: int, idx: int = 0, cfg
     return dur
 
 
-def revoice(src: Path, dst: Path, convert) -> Path:
+def _envelope(path: Path, rate: int = 4000, hop: int = 40) -> list[float]:
+    """Awaaz ka volume har 10 ms par (lip-sync ki timing naapne ke liye)."""
+    raw = subprocess.run([ffmpeg_exe(), "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", str(rate),
+                          "-f", "s16le", "-"], capture_output=True).stdout
+    import array
+    a = array.array("h")
+    a.frombytes(raw[: len(raw) // 2 * 2])
+    out = []
+    for i in range(0, len(a) - hop, hop):
+        seg = a[i:i + hop]
+        out.append((sum(x * x for x in seg) / hop) ** 0.5)
+    return out
+
+
+def audio_offset(ref: Path, other: Path, max_s: float = 0.6) -> tuple[float, float]:
+    """other awaaz ref se kitni der peeche (+) ya aage (-) hai, seconds mein, aur match kitna pakka hai (0 se 1).
+    Dono awaazon ke volume-shape ko 10 ms ke steps par milakar dekhta hai."""
+    a, b = _envelope(ref), _envelope(other)
+    n = min(len(a), len(b))
+    if n < 50:
+        return 0.0, 0.0
+    a, b = a[:n], b[:n]
+    ma, mb = sum(a) / n, sum(b) / n
+    a = [x - ma for x in a]
+    b = [x - mb for x in b]
+    na = (sum(x * x for x in a) or 1.0) ** 0.5
+    nb = (sum(x * x for x in b) or 1.0) ** 0.5
+    best, best_lag = -2.0, 0
+    k = int(max_s * 100)
+    for lag in range(-k, k + 1):
+        if lag >= 0:
+            c = sum(x * y for x, y in zip(a[: n - lag], b[lag:]))
+        else:
+            c = sum(x * y for x, y in zip(a[-lag:], b[: n + lag]))
+        if c > best:
+            best, best_lag = c, lag
+    return best_lag / 100.0, best / (na * nb)
+
+
+def revoice(src: Path, dst: Path, convert, say=None) -> Path:
     """Clip ki awaaz nikaal kar convert(audio_in, audio_out) se badalta hai aur wapas video par chipkata hai.
     Video ek frame bhi nahi chhedta, awaaz ki timing wahi rehti hai (lip-sync bacha rehta hai)."""
     a_in, a_out = dst.with_suffix(".in.mp3"), dst.with_suffix(".out.mp3")
     run_ff(["-i", str(src), "-vn", "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k", str(a_in)])
     convert(a_in, a_out)
     vd = media_duration(src)
-    run_ff(["-i", str(src), "-i", str(a_out), "-filter_complex", "[1:a]aresample=44100,apad[a]", "-map", "0:v",
+    shift = 0.0
+    try:  # ElevenLabs ki awaaz asli awaaz se thodi aage-peeche ho to hont ke hisaab se wapas milao
+        off, conf = audio_offset(a_in, a_out)
+        if conf >= 0.5 and 0.04 <= abs(off) <= 0.6:
+            shift = off
+    except Exception:  # noqa: BLE001 - alignment fail ho to bina shift ke chalo
+        shift = 0.0
+    if say and shift:
+        say(f"Awaaz ka timing {abs(shift) * 1000:.0f} ms {'peeche' if shift > 0 else 'aage'} tha, theek kar diya.")
+    shifted = "[1:a]aresample=44100,apad[a]"
+    if shift > 0:   # clone awaaz peeche hai: shuru ka hissa kaat do
+        shifted = f"[1:a]aresample=44100,atrim=start={shift:.3f},asetpts=PTS-STARTPTS,apad[a]"
+    elif shift < 0:  # clone awaaz aage hai: shuru mein khamoshi jodo
+        shifted = f"[1:a]aresample=44100,adelay={int(-shift * 1000)}:all=1,apad[a]"
+    run_ff(["-i", str(src), "-i", str(a_out), "-filter_complex", shifted, "-map", "0:v",
             "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-t", f"{vd:.3f}", str(dst)])
     a_in.unlink(missing_ok=True)
     a_out.unlink(missing_ok=True)
@@ -358,7 +479,7 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
         say(f"Clip {i + 1}/{len(clips)} taiyar ho rahi hai...")
         if convert and has_audio(src):
             say(f"Clip {i + 1}: awaaz clone voice mein badli ja rahi hai...")
-            src = revoice(src, work / f"vc_{i}.mp4", convert)
+            src = revoice(src, work / f"vc_{i}.mp4", convert, say)
         dst = work / f"norm_{i}.mp4"
         dur = _normalize(src, dst, w, h, fps, i, video_cfg)
         names.append(dst.name)
