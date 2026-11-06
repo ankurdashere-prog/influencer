@@ -86,6 +86,7 @@ def _clean_scene(s, fb: dict) -> dict:
 # ---------------- Avatar mode (client ka asli avatar: 10 sec scene = 4 sec presenter + 6 sec visuals) ----------------
 AVATAR_SCENES = 3
 PRESENTER_SECONDS = 4
+AVATAR_SECONDS = 8  # Flow mein 8 sec ki clip free hai; 4-10 chun sakte ho
 _RISKY = re.compile(r"guarantee|100\s*%|permanent|\bcure\b|chamatkar|risk[- ]?free|no side effect|pain[- ]?free|painless",
                     re.I)
 
@@ -101,10 +102,18 @@ def _avatar_norm(a: dict | None) -> dict | None:
         n = int(a.get("scenes") or AVATAR_SCENES)
     except (TypeError, ValueError):
         n = AVATAR_SCENES
+    def num(k: str, default: int) -> int:
+        try:
+            return int(float(a.get(k)))
+        except (TypeError, ValueError):
+            return default
+
+    sec = min(max(num("seconds", AVATAR_SECONDS), 4), 10)
+    pres = min(max(num("presenter", min(PRESENTER_SECONDS, sec - 2)), 2), sec - 2)
     return {"name": clean("name", "Avatar", 60), "role": clean("role", "", 80),
             "gender": "female" if str(a.get("gender", "male")).lower().startswith("f") else "male",
             "look": clean("look", "", 300), "language": clean("language", "Hinglish (Hindi in Roman script)", 60),
-            "scenes": min(max(n, 1), 6)}
+            "scenes": min(max(n, 1), 6), "seconds": sec, "presenter": pres}
 
 
 def build_avatar_prompt(s: dict, a: dict) -> str:
@@ -114,10 +123,10 @@ def build_avatar_prompt(s: dict, a: dict) -> str:
         "IDENTITY LOCK (read this fully before creating the video): use ONLY the attached avatar for the person. "
         "Keep the exact same face, hairstyle, facial hair, skin tone, body, outfit, voice, background and lighting "
         f"as the avatar in this clip. Do not change anything about the person.{look}\n"
-        "Format: vertical 9:16, 10 seconds, realistic phone-camera look, no subtitles, no text or logos added on screen.\n"
-        f"Seconds 0-{PRESENTER_SECONDS} (presenter on camera): {s['camera_angle']}. {s['action']}. "
+        f"Format: vertical 9:16, {a['seconds']} seconds, realistic phone-camera look, no subtitles, no text or logos added on screen.\n"
+        f"Seconds 0-{a['presenter']} (presenter on camera): {s['camera_angle']}. {s['action']}. "
         f"{he} speaks to the camera in {a['language']}, clear natural voice, lips in sync: \"{s['presenter_line']}\"\n"
-        f"Seconds {PRESENTER_SECONDS}-10 (cutaway visuals, presenter not on screen): {s['visual']}. "
+        f"Seconds {a['presenter']}-{a['seconds']} (cutaway visuals, presenter not on screen): {s['visual']}. "
         f"{his} voiceover continues in the exact same voice and tone: \"{s['voiceover_line']}\"\n"
         "Same face and same voice in every clip. Wholesome and brand-safe."
     )
@@ -135,11 +144,12 @@ def _avatar_llm_prompt(topic: str | None, a: dict, n: int) -> str:
     lines += [
         f"Return ONE JSON object with keys: topic, hook_text, caption, hashtags, scenes. scenes = exactly {n} objects "
         "with keys camera_angle, action, presenter_line, visual, voiceover_line.",
-        f"- Each scene is ONE 10-second clip: seconds 0-{PRESENTER_SECONDS} the presenter speaks to camera "
-        f"(presenter_line), seconds {PRESENTER_SECONDS}-10 cutaway visuals while the same voice continues "
+        f"- Each scene is ONE {a['seconds']}-second clip: seconds 0-{a['presenter']} the presenter speaks to camera "
+        f"(presenter_line), seconds {a['presenter']}-{a['seconds']} cutaway visuals while the same voice continues "
         "(voiceover_line).",
-        "- presenter_line: max 10 words. voiceover_line: max 16 words. Together about 120-145 characters, one complete "
-        "idea, sentences must finish inside the scene.",
+        f"- presenter_line: max {max(round(a['presenter'] * 2.4), 4)} words. voiceover_line: max "
+        f"{max(round((a['seconds'] - a['presenter']) * 2.4), 4)} words (speech is about 2.4 words per second). One "
+        "complete idea, sentences must finish inside the scene.",
         "- Scene 1 = scroll-stopping hook. Last scene = invite the viewer to ask a question or book a consultation.",
         "- camera_angle and action: simple (close-up, medium shot; small gesture, nod, smile). Do not describe the face.",
         "- visual: what the cutaway shows (clinic or lifestyle b-roll, hands, objects, text-free scenes). No faces.",
@@ -157,7 +167,7 @@ def _avatar_fallback(topic: str | None, a: dict, n: int) -> dict:
     nm = a["name"]
     base = [
         ("Close-up, eye level", "Smiles and gives a small wave",
-         f"Namaste, main {nm}. Aaj {t} ke baare mein suniye.", "Clean, bright clinic reception, soft daylight, hands arranging papers",
+         f"Namaste, main {nm}. Aaj baat {t[:34]} ki.", "Clean, bright clinic reception, soft daylight, hands arranging papers",
          "Sahi jaankari hi pehla kadam hai, aur galat jaankari se bachna zaroori hai."),
         ("Medium shot, slightly low angle", "Gestures with one hand while explaining",
          "Sabse pehle ek baat samajh lijiye.", "Close-up of a notebook and pen on a desk, warm light",
@@ -172,8 +182,18 @@ def _avatar_fallback(topic: str | None, a: dict, n: int) -> dict:
          "Aapka sawal kya hai?", "Phone showing a chat window, text-free, soft light",
          "Comment mein apna sawal likhiye, ya consultation ke liye clinic se baat kijiye."),
     ]
-    scenes = [dict(zip(("camera_angle", "action", "presenter_line", "visual", "voiceover_line"), base[i % len(base)]))
-              for i in range(n)]
+    short = ["Sahi jaankari hi pehla kadam hai.", "Har insaan ka case alag hota hai.",
+             "Apne doctor se poori baat karein.", "Soch samajh kar hi kadam uthaiye.",
+             "Apna sawal comment mein likhiye."]
+    use_short = (a["seconds"] - a["presenter"]) < 5.5
+    scenes = []
+    for i in range(n):
+        row = list(base[i % len(base)])
+        if use_short:
+            row[4] = short[i % len(short)]
+        if a["presenter"] < 3.5 and len(row[2].split()) > 7:
+            row[2] = ["Ek zaroori baat suniye.", "Ye baat samajh lijiye.", "Pehle sawal poochiye."][i % 3]
+        scenes.append(dict(zip(("camera_angle", "action", "presenter_line", "visual", "voiceover_line"), row)))
     return {"topic": t[:80], "hook_text": f"{t[:28]}? JAANIYE", "caption": f"{t}\nAapka kya sawal hai?",
             "hashtags": ["education", "reels"], "scenes": scenes}
 
