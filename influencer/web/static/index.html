@@ -51,6 +51,18 @@
   .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
   .toast.show{opacity:1}
   .hide{display:none}
+  .wizbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .wizpill{border:1px solid var(--line);background:var(--card);color:var(--mute);border-radius:999px;padding:8px 14px;font-weight:600;cursor:pointer}
+  .wizpill.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .wizpill.done{color:var(--ok);border-color:var(--ok)}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+  .chip{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px 14px;cursor:pointer;text-align:left;font:inherit}
+  .chip.on{border-color:var(--accent);background:var(--soft);font-weight:700}
+  body:not(.wiz-adv) .adv-only{display:none!important}
+  body.wiz-adv .wiz-only{display:none!important}
+  body[data-wiz="1"] #stScenes{display:none}
+  body[data-wiz="1"] .wstep-2,body[data-wiz="1"] .wstep-3,body[data-wiz="2"] .wstep-1,body[data-wiz="2"] .wstep-3,
+  body[data-wiz="3"] .wstep-1,body[data-wiz="3"] .wstep-2{display:none!important}
 </style>
 </head>
 <body>
@@ -100,7 +112,15 @@
 
 <section id="t-studio" class="hide">
   <div class="card">
-    <h2>Clip Studio (test)</h2>
+    <div class="wizbar wiz-only" id="wizBar">
+      <button class="wizpill on" data-s="1" type="button">1  Kya banana hai</button>
+      <button class="wizpill" data-s="2" type="button">2  Script aur plan</button>
+      <button class="wizpill" data-s="3" type="button">3  Clips aur reel</button>
+    </div>
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="wizAdv"> Advanced: poora form dikhao (sab options ek saath)</label>
+  </div>
+  <div class="card wstep-1" id="stCard1">
+    <h2>Clip Studio</h2>
     <p class="mute">1) Script aur scene-wise prompts banao. 2) Har prompt apne video tool (jaise Flow) mein avatar image ke saath paste karke 4 second ka clip banao. 3) Clips yahan upload karo, hum jodkar captions aur music ke saath reel bana denge.</p>
     <p id="avDl"><a href="/character-files/reference.png" download="avatar.png">Avatar image download karo</a> <span class="mute">(video tool mein upload karne ke liye; Character tab mein pehle chehra set karo)</span></p>
     <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="avOn"> Avatar mode (client ka asli avatar: har scene mein pehle kuch second avatar bolta hai, phir visuals)</label>
@@ -124,12 +144,32 @@
       <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="avConsent"> Is insaan ne chehre aur awaaz ke use ki likhit permission di hai, aur har script wo khud approve karega</label>
       <p class="mute">Flow mein: Video, Ingredients mein avatar attach karo, model Omni Flash, 8 sec (jitne second Seconds mein likhe hain), 9:16, phir scene ka poora prompt paste karo. Post par "AI-generated" label zaroor lagao.</p>
     </div>
+    <div class="wiz-only" id="wizChips">
+      <label>Doctor kitna bolenge?</label>
+      <div class="chips" data-k="pres">
+        <button type="button" class="chip on" data-v="full"><b>Poori clip</b><br><span class="mute">Doctor poore time bolenge, photo/video aap lagaoge (sabse accha)</span></button>
+        <button type="button" class="chip" data-v="half"><b>Aadha + visuals</b><br><span class="mute">Pehle 4 s doctor, phir Flow ke visuals</span></button>
+      </div>
+      <label>Reel kitni badi?</label>
+      <div class="chips" data-k="scenes">
+        <button type="button" class="chip on" data-v="1"><b>1 scene</b><br><span class="mute">~8 second</span></button>
+        <button type="button" class="chip" data-v="2"><b>2 scenes</b><br><span class="mute">~16 second</span></button>
+        <button type="button" class="chip" data-v="3"><b>3 scenes</b><br><span class="mute">~24 second</span></button>
+      </div>
+    </div>
     <label for="stTopic">Topic (khaali chhodo to AI sochega)</label>
     <input type="text" id="stTopic" maxlength="200" placeholder="jaise: Morning routine tips">
     <div class="row"><button class="btn" id="stScript">Script aur prompts banao</button></div>
   </div>
   <div id="stScenes"></div>
-  <div class="card hide" id="stMerge">
+  <div class="card hide wstep-2" id="wizPlanCard">
+    <b>Editor ki salah (pacing)</b>
+    <p class="mute">Har prompt Flow mein avatar ke saath paste karke clip banao. Neeche plan dekho, theek lage to aage badho aur clips upload karo.</p>
+    <div class="row"><button class="btn alt" id="stPlan">Editor se plan lo (pacing)</button></div>
+    <div id="stPlanBox" class="card hide"></div>
+    <div class="row"><button class="btn alt wiz-only" id="wizBack2" type="button">Wapas</button> <button class="btn wiz-only" id="wizNext2" type="button">Script theek hai, aage (clips upload)</button></div>
+  </div>
+  <div class="card hide wstep-3" id="stMerge">
     <label for="stHook">Hook text (screen par pehle 2.5 second, bada likha)</label>
     <input type="text" id="stHook" maxlength="60">
     <label for="stEnd">Aakhir ka text (jaise: Follow karo aur reels ke liye), khaali chhodo to nahi aayega</label>
@@ -148,12 +188,11 @@
     <input type="range" id="stMusicVol" min="0" max="40" value="12">
     <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="stMusic" checked> File upload na ho to assets/music se music lo (agar ho)</label>
     <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="stZoom" checked> Auto micro-zoom (doctor ke lambe hisse mein har ~3 second par halka zoom in/out)</label>
-    <div class="row"><button class="btn alt" id="stPlan">Editor se plan lo (pacing)</button></div>
-    <div id="stPlanBox" class="card hide"></div>
-    <div class="row"><button class="btn" id="stGo">Clips jodkar reel banao</button></div>
+    <div class="card wiz-only" id="wizCost"></div>
+    <div class="row"><button class="btn alt wiz-only" id="wizBack3" type="button">Wapas</button> <button class="btn" id="stGo">Clips jodkar reel banao</button></div>
     <div class="log hide" id="stLog"></div>
   </div>
-  <div class="card">
+  <div class="card adv-only">
     <h2>Voice Lab (client ki awaaz)</h2>
     <p class="mute">Do raaste: <b>ElevenLabs</b> (API, neeche tick karo) ya <b>OpenVoice v2</b> (free, Colab par; tick mat karo).</p>
     <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="vlEleven"> ElevenLabs API use karo (credits kharch honge)</label>
@@ -289,7 +328,7 @@ $('#stScript').onclick=async()=>{const b=$('#stScript');
       scenes:Number($('#avScenes').value),seconds:Number($('#avSec').value),presenter:Number($('#avPres').value),camera:$('#avCam').value,consent:true};
   }
   b.disabled=true;
-  try{studio=await post('/api/clips/script',body);if(body.avatar){studio.seconds=body.avatar.seconds;studio.presenter=body.avatar.presenter}renderStudio();if(studio.note)toast(studio.note)}
+  try{studio=await post('/api/clips/script',body);if(body.avatar){studio.seconds=body.avatar.seconds;studio.presenter=body.avatar.presenter}renderStudio();if(studio.note)toast(studio.note);wizGo(2)}
   catch(e){toast('Error: '+e.message)}b.disabled=false};
 const BR_FX=[['slow_push','Slow push (dheere zoom)'],['zoom_in','Zoom in'],['zoom_out','Zoom out'],['pan_left','Pan left'],['pan_right','Pan right'],['pan_up','Pan up'],['pan_down','Pan down'],['blur_bg','Poori photo + blur background'],['static','Bina hilne wali']];
 const BR_TR=[['fade','Fade'],['slide','Slide in'],['cut','Seedha cut']];
@@ -344,14 +383,15 @@ function renderStudio(){
   const box=$('#stScenes');box.replaceChildren();
   studio.scenes.forEach((s,i)=>{
     const ta=el('textarea',{spellcheck:'false',style:'min-height:'+(studio.mode==='avatar'?280:150)+'px'});ta.value=s.prompt;
-    box.append(el('div',{class:'card'},el('b',{},'Scene '+(i+1)),ta,
-      el('div',{class:'row'},el('button',{class:'btn alt',onclick:async()=>{try{await navigator.clipboard.writeText(ta.value);toast('Copy ho gaya')}catch{ta.select();toast('Select ho gaya, Ctrl+C dabao')}}},'Prompt copy karo')),
-      el('label',{},'Caption text (jo bola jayega)'),el('input',{type:'text',id:'dlg'+i,value:s.dialogue}),
-      el('label',{},'Is scene ka clip (video file)'),el('input',{type:'file',accept:'video/*',id:'clip'+i}),
-      brollBox(i)));
+    const w2=(n)=>{n.classList.add('wstep-2');return n},w3=(n)=>{n.classList.add('wstep-3');return n};
+    box.append(el('div',{class:'card'},el('b',{},'Scene '+(i+1)),w2(ta),
+      w2(el('div',{class:'row'},el('button',{class:'btn alt',onclick:async()=>{try{await navigator.clipboard.writeText(ta.value);toast('Copy ho gaya')}catch{ta.select();toast('Select ho gaya, Ctrl+C dabao')}}},'Prompt copy karo'))),
+      w2(el('label',{},'Caption text (jo bola jayega)')),w2(el('input',{type:'text',id:'dlg'+i,value:s.dialogue})),
+      w3(el('label',{},'Is scene ka clip (video file)')),w3(el('input',{type:'file',accept:'video/*',id:'clip'+i})),
+      w3(brollBox(i))));
   });
   $('#stHook').value=studio.hook_text||'';
-  $('#stMerge').classList.remove('hide');
+  $('#stMerge').classList.remove('hide');$('#wizPlanCard').classList.remove('hide');wizCost();
 }
 $('#stMusicVol').oninput=()=>$('#stMusicVolVal').textContent=$('#stMusicVol').value;
 $('#stGo').onclick=async()=>{
@@ -417,6 +457,52 @@ $('#stPlan').onclick=async()=>{
     box.classList.remove('hide');
   }catch(e){toast('Error: '+e.message)}
 };
+
+// ---- Wizard (3 step): Kya banana hai -> Script aur plan -> Clips aur reel
+let wizStep=1;
+const lsGet=k=>{try{return localStorage.getItem(k)}catch{return null}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch{}};
+function wizGo(n){
+  wizStep=n;document.body.dataset.wiz=$('#wizAdv').checked?'all':String(n);
+  $$('#wizBar .wizpill').forEach(b=>{const k=Number(b.dataset.s);b.classList.toggle('on',k===n);b.classList.toggle('done',k<n&&!!(k===1?studio:studio))});
+  if(n===3)wizCost();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function wizCost(){
+  const box=$('#wizCost');if(!box||!studio||!studio.scenes)return;
+  const n=studio.scenes.length,sec=studio.seconds||8,vc=$('#stVoiceChange').value;
+  box.replaceChildren(el('b',{},'Kharcha ka andaza'),el('div',{class:'mute'},
+    'Flow clips: '+n+' x '+sec+' s ('+(sec<=8?'8 s Flow mein free':'10 s ke liye Flow mein alag credit lag sakte hain, pehle check karo')+'). '+
+    (vc?'Awaaz badalne mein ~'+(n*sec)+' second ki audio ElevenLabs par process hogi. Credits ka rate apne ElevenLabs dashboard se dekho: reel se pehle aur baad ka balance compare karo.':'Original awaaz: ElevenLabs credits kharch nahi honge.')));
+}
+$('#stVoiceChange').addEventListener('change',wizCost);
+function wizAvatarOn(){$('#avOn').checked=true;$('#avBox').classList.remove('hide');$('#avDl').classList.add('hide')}
+$('#wizAdv').onchange=()=>{document.body.classList.toggle('wiz-adv',$('#wizAdv').checked);if(!$('#wizAdv').checked){wizAvatarOn();wizApply()}lsSet('wizAdv',$('#wizAdv').checked?'1':'0');wizGo(wizStep)};
+$$('#wizBar .wizpill').forEach(b=>b.onclick=()=>{const k=Number(b.dataset.s);if(k>1&&!studio)return toast('Pehle script aur prompts banao');wizGo(k)});
+$('#wizBack2').onclick=()=>wizGo(1);$('#wizNext2').onclick=()=>wizGo(3);$('#wizBack3').onclick=()=>wizGo(2);
+// step 1: chips ke jawab purane fields mein
+function wizApply(){
+  const full=$('#wizChips [data-k=pres] .chip.on').dataset.v==='full';
+  const sc=Number($('#wizChips [data-k=scenes] .chip.on').dataset.v);
+  $('#avSec').value=8;$('#avPres').value=full?8:4;$('#avScenes').value=sc;
+}
+$$('#wizChips .chips').forEach(g=>g.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{g.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');wizApply()}));
+['avSec','avPres','avScenes'].forEach(id=>{$('#'+id).classList.add('adv-only');const l=document.querySelector('label[for='+id+']');if(l)l.classList.add('adv-only')});
+[...$('#stCard1').querySelectorAll(':scope > p.mute')].forEach(e=>e.classList.add('adv-only'));
+['avDl'].forEach(id=>{const e=$('#'+id);if(e)e.classList.add('adv-only')});
+$('#avOn').closest('label').classList.add('adv-only');
+[...$('#avBox').querySelectorAll('p.mute')].forEach(e=>e.classList.add('adv-only'));
+['#stVoiceFile','#stVoiceClear'].forEach(q=>{const e=$(q);if(e)(e.closest('.row')||e).classList.add('adv-only')});
+['label[for=stVoiceFile]','#stUseVoice','label[for=stMusicFile]','#stMusicFile','label[for=stMusicVol]','#stMusicVol','#stMusic'].forEach(q=>{const e=$(q)||document.querySelector(q);if(e){(e.tagName==='INPUT'&&e.type==='checkbox'?e.closest('label'):e).classList.add('adv-only')}});
+[...$('#stMerge').querySelectorAll(':scope > p.mute')].forEach(e=>e.classList.add('adv-only'));
+// avatar details yaad rakho (consent nahi)
+['avName','avRole','avGender','avLook','avCam'].forEach(id=>{const v=lsGet('wiz_'+id);if(v!==null)$('#'+id).value=v;$('#'+id).addEventListener('change',()=>lsSet('wiz_'+id,$('#'+id).value))});
+(function wizInit(){
+  wizAvatarOn();
+  if(lsGet('wizAdv')==='1')$('#wizAdv').checked=true;
+  document.body.classList.toggle('wiz-adv',$('#wizAdv').checked);
+  wizApply();wizGo(1);
+})();
 
 // library
 async function loadItems(){
