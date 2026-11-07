@@ -617,6 +617,8 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
         say("Awaaz: Voice Lab ki alag audio (clips ki awaaz hatai jayegi).")
     else:
         say("Awaaz: clip ki original (Flow wali) awaaz. Clone voice ke liye dropdown mein 'Badlo' chuno.")
+    say(f"B-roll: {len(broll)} clip par apni photo/video mili." if broll else
+        "B-roll: koi photo/video nahi mili (agar lagayi thi to page refresh karke file dobara chuno).")
     for i, src in enumerate(clips):
         say(f"Clip {i + 1}/{len(clips)} taiyar ho rahi hai...")
         if convert and has_audio(src):
@@ -656,6 +658,7 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
                     bs = max(b_start, 0.0)
                     be = dur if (b_end is None or b_end > dur - 0.15 or b_end < bs + 0.5) else b_end
                     skip = (bs, be)
+                    say(f"Clip {i + 1}: B-roll lag gayi ({bs:.1f}-{be:.1f} s).")
                     events += [t0 + bs, t0 + be]
                 except Exception as e:  # B-roll fail ho to reel bina B-roll ke aage badhe
                     say(f"Clip {i + 1}: photo/video lagane mein dikkat ({str(e)[:120]}), bina B-roll ke aage badh raha hu.")
