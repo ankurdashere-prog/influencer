@@ -576,8 +576,21 @@ def _video_size(path: Path) -> tuple[int, int] | None:
     return w, h
 
 
+def cut_video(src: Path, dst: Path, a: float, b: float | None) -> Path:
+    """Video ka hissa a..b second (b=None to a se aage ~10 s tak) alag chhoti file mein. Awaaz hata deta hai,
+    badi video ko 1280 px tak chhota karta hai (RAM bachti hai)."""
+    tot = media_duration(src)
+    a = min(max(float(a), 0.0), max(tot - 0.3, 0.0))
+    stop = tot if b is None else min(max(float(b), a + 0.3), tot)
+    run_ff(["-ss", f"{a:.3f}", "-i", str(src), "-t", f"{max(stop - a, 0.3):.3f}", "-an",
+            "-vf", "scale=w='min(iw,1280)':h=-2", "-threads", "1", "-c:v", "libx264", "-preset", "ultrafast",
+            "-crf", "20", "-pix_fmt", "yuv420p", str(dst)], timeout=180)
+    return dst
+
+
 def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | None, effect: str, transition: str,
-                w: int, h: int, fps: int, fade: float = 0.3) -> Path:
+                w: int, h: int, fps: int, fade: float = 0.3, src_in: float | None = None,
+                src_out: float | None = None) -> Path:
     """Clip (base) ke video par `start` second se (`end` tak, warna clip ke aakhir tak) photo/video dikhata hai.
     Clip ki awaaz ko haath nahi lagata, isliye doctor ki awaaz (aur lip-sync) wahi rehti hai."""
     dur = media_duration(base)
@@ -593,6 +606,10 @@ def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | N
         chain = _crop_chain(effect, length, w, h, fps)
         src_args = ["-loop", "1", "-framerate", str(fps), "-t", f"{length:.3f}", "-i", str(prepared)]
     else:
+        cut = None
+        if src_in is not None:  # video ke andar ka chuna hua hissa (jaise 12.0 se 15.0 second)
+            cut = cut_video(media, dst.with_suffix(".cut.mp4"), src_in, src_out)
+            media = cut
         vs = _video_size(media)
         if vs and vs[0] > vs[1] * 1.05:
             # landscape video: poori video beech mein, peeche halka blur (crop se 75% hissa kat jata aur dhundla dikhta)
@@ -620,6 +637,8 @@ def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | N
             "-pix_fmt", "yuv420p", "-t", f"{dur:.3f}", str(dst)], timeout=240)
     if is_img:
         dst.with_suffix(".bg.jpg").unlink(missing_ok=True)
+    else:
+        dst.with_suffix(".cut.mp4").unlink(missing_ok=True)
     return dst
 
 
@@ -675,7 +694,8 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
             out_b = work / f"br_{i}_{n_it}.mp4"
             try:
                 apply_broll(dst, out_b, bl["path"], max(b_start, 0.0), b_end, bl.get("effect", "slow_push"),
-                            bl.get("transition", "fade"), w, h, fps)
+                            bl.get("transition", "fade"), w, h, fps,
+                            src_in=bl.get("src_in"), src_out=bl.get("src_out"))
                 dst = out_b
                 bs = max(b_start, 0.0)
                 be = dur if (b_end is None or b_end > dur - 0.15 or b_end < bs + 0.5) else b_end
