@@ -229,7 +229,7 @@ function el(tag,attrs={},...kids){const e=document.createElement(tag);for(const[
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}
 async function api(path,opt={}){
   const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});
-  if(!r.ok){let m=r.statusText;try{const j=await r.json();m=j.detail||j.error||m}catch{}throw new Error(m)}
+  if(!r.ok){let m=r.statusText;try{const j=await r.json();m=j.detail||j.error||m}catch{}if(!m)m='Server ne sahi jawab nahi diya (HTTP '+r.status+'). Shayad server restart hua (RAM kam padi) - 1 minute baad dobara try karo.';throw new Error(m)}
   return r.json()
 }
 const post=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
