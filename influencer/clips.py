@@ -564,6 +564,18 @@ def _prep_image(src: Path, out: Path, w: int, h: int, blur_bg: bool) -> Path:
     return out
 
 
+def _video_size(path: Path) -> tuple[int, int] | None:
+    p = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(path)], capture_output=True, text=True)
+    m = re.search(r"Video:.*?,\s*(\d{2,5})x(\d{2,5})", p.stderr)
+    if not m:
+        return None
+    w, h = int(m[1]), int(m[2])
+    rot = re.search(r"rotate\s*:\s*(-?\d+)", p.stderr)
+    if rot and abs(int(rot[1])) % 180 == 90:
+        w, h = h, w
+    return w, h
+
+
 def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | None, effect: str, transition: str,
                 w: int, h: int, fps: int, fade: float = 0.3) -> Path:
     """Clip (base) ke video par `start` second se (`end` tak, warna clip ke aakhir tak) photo/video dikhata hai.
@@ -581,8 +593,16 @@ def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | N
         chain = _crop_chain(effect, length, w, h, fps)
         src_args = ["-loop", "1", "-framerate", str(fps), "-t", f"{length:.3f}", "-i", str(prepared)]
     else:
-        chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={fps},"
-                 "format=yuva420p")
+        vs = _video_size(media)
+        if vs and vs[0] > vs[1] * 1.05:
+            # landscape video: poori video beech mein, peeche halka blur (crop se 75% hissa kat jata aur dhundla dikhta)
+            sw, sh = max(w // 8, 2) // 2 * 2, max(h // 8, 2) // 2 * 2
+            chain = (f"split[bgs][fgs];[bgs]scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={sw}:{sh},"
+                     f"scale={w}:{h}:flags=bilinear[bgb];[fgs]scale={w}:-2:flags=bilinear[fgv];"
+                     f"[bgb][fgv]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={fps},format=yuva420p")
+        else:
+            chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={fps},"
+                     "format=yuva420p")
         src_args = ["-stream_loop", "-1", "-t", f"{length:.3f}", "-i", str(media)]
     if transition == "fade":
         chain += f",fade=t=in:st=0:d={fade:.2f}:alpha=1"
