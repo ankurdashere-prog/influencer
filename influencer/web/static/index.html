@@ -306,7 +306,39 @@ function brollBox(i){
       el('div',{},el('label',{},'Kab tak (khaali = clip ke aakhir tak; kai photo hon to is window mein barabar baant di jayengi)'),num('bre'+i,'', 'aakhir')),
       el('div',{},el('label',{},'Photo ka effect'),sel('brx'+i,BR_FX)),
       el('div',{},el('label',{},'Aane ka tareeka'),sel('brt'+i,BR_TR))),
-    el('div',{class:'mute'},'"Kab se" Flow ki asli clip ke second hain (jaise 6 = 6th second se). Chhoti clip par photo 1 se 2 second se kam na rakho.'));
+    el('div',{class:'mute'},'"Kab se" Flow ki asli clip ke second hain (jaise 6 = 6th second se). Chhoti clip par photo 1 se 2 second se kam na rakho.'),
+    trimBox(i));
+}
+const TRIM={};
+function trimBox(i){
+  TRIM[i]={file:null,cuts:[]};
+  const info=el('div',{class:'mute',id:'tvi'+i},'Shuru: - | Khatam: -');
+  const list=el('div',{id:'tvl'+i});
+  const vid=el('video',{id:'tvp'+i,controls:true,playsinline:true,class:'hide',style:'max-width:260px;margin-top:6px'});
+  let tin=null,tout=null;
+  const draw=()=>{list.replaceChildren(...TRIM[i].cuts.map((c,n)=>el('div',{class:'row',style:'gap:8px;align-items:center'},
+    el('span',{},'Cut '+(n+1)+': video ka '+c.in.toFixed(1)+'-'+c.out.toFixed(1)+' s ('+(c.out-c.in).toFixed(1)+' s) -> reel mein '+c.start.toFixed(1)+' s par'),
+    el('button',{class:'btn alt',onclick:()=>{TRIM[i].cuts.splice(n,1);draw()}},'Hatao'))))};
+  const f=el('input',{type:'file',accept:'video/*',id:'tv'+i});
+  f.onchange=()=>{const file=f.files[0];TRIM[i]={file:file||null,cuts:[]};tin=tout=null;info.textContent='Shuru: - | Khatam: -';draw();
+    if(file){vid.src=URL.createObjectURL(file);vid.classList.remove('hide')}else{vid.removeAttribute('src');vid.classList.add('hide')}};
+  const sIn=el('button',{class:'btn alt',onclick:()=>{tin=vid.currentTime;info.textContent='Shuru: '+tin.toFixed(1)+' s | Khatam: '+(tout==null?'-':tout.toFixed(1)+' s')}},'Yahan se shuru');
+  const sOut=el('button',{class:'btn alt',onclick:()=>{tout=vid.currentTime;info.textContent='Shuru: '+(tin==null?'-':tin.toFixed(1)+' s')+' | Khatam: '+tout.toFixed(1)+' s'}},'Yahan khatam');
+  const at=el('input',{type:'number',id:'tvs'+i,min:'0',max:'30',step:'0.5',style:'width:90px'});
+  const add=el('button',{class:'btn',onclick:()=>{
+    if(!TRIM[i].file)return toast('Pehle video chuno');
+    if(tin==null||tout==null||tout-tin<0.5)return toast('Video chalao, "Yahan se shuru" aur "Yahan khatam" dabao (kam se kam 0.5 s ka hissa).');
+    if(tout-tin>8)return toast('Ek cut 8 second se chhota rakho.');
+    const prev=TRIM[i].cuts.length?TRIM[i].cuts[TRIM[i].cuts.length-1]:null;
+    const start=at.value!==''&&!prev?Number(at.value):(prev?prev.start+(prev.out-prev.in):Number($('#brs'+i).value||3));
+    TRIM[i].cuts.push({in:tin,out:tout,start});draw();tin=tout=null;info.textContent='Shuru: - | Khatam: -';at.value=''}},'Ye hissa jodo');
+  return el('details',{style:'margin-top:8px'},el('summary',{},'Apni video se hissa chuno (kaat kar lagao)'),
+    el('label',{},'Video chuno (doctor ki dusri video ya licensed video). Chalakar shuru aur khatam ka pal chuno, phir "Ye hissa jodo". Ek video se kai hisse ban sakte hain.'),
+    f,vid,info,el('div',{class:'row',style:'gap:8px;flex-wrap:wrap'},sIn,sOut),
+    el('div',{},el('label',{},'Pehla cut reel mein kab se lage (second; khaali = upar wale "Kab se" se)'),at),
+    add,list,
+    el('label',{style:'font-weight:500;display:flex;gap:8px;align-items:center'},el('input',{type:'checkbox',id:'tvr'+i}),'Is video ka mere paas haq hai (meri apni ya licensed)'),
+    el('div',{class:'mute'},'Cut ki apni awaaz band rahegi, doctor ki awaaz chalti rahegi. Ek clip par photo + cut mila kar 4 se zyada nahi.'));
 }
 function renderStudio(){
   const box=$('#stScenes');box.replaceChildren();
@@ -325,14 +357,24 @@ $('#stMusicVol').oninput=()=>$('#stMusicVolVal').textContent=$('#stMusicVol').va
 $('#stGo').onclick=async()=>{
   const fd=new FormData(),dl=[];
   const bm=[];
-  studio.scenes.forEach((s,i)=>{const f=$('#clip'+i).files[0];if(f){fd.append('clips',f);dl.push($('#dlg'+i).value);
-    const bfs=[...$('#br'+i).files].slice(0,4);
+  let fileN=0,needRights=false,rightsOk=true;
+  for(let i=0;i<studio.scenes.length;i++){const f=$('#clip'+i).files[0];
+    if(!f){if($('#br'+i).files[0]||TRIM[i].cuts.length)toast('Scene '+(i+1)+': B-roll tabhi lagegi jab is scene ka clip bhi upload ho.');continue}
+    fd.append('clips',f);dl.push($('#dlg'+i).value);const ci=dl.length-1;
+    const bfs=[...$('#br'+i).files].slice(0,4),cuts=TRIM[i].cuts;
+    if(bfs.length+cuts.length>4)return toast('Clip '+(i+1)+': photo + cut mila kar 4 se zyada nahi.');
     if(bfs.length){
       const st=Number($('#brs'+i).value||0),en=$('#bre'+i).value===''?null:Number($('#bre'+i).value),N=bfs.length;
       const winEnd=N>1?(en??st+2.5*N):en,per=N>1?(winEnd-st)/N:0;
       if(N>1&&per<1)toast('Clip '+(i+1)+': har photo ko kam se kam 1 second chahiye, "Kab tak" badhao.');
-      bfs.forEach((bf,j)=>{fd.append('broll_files',bf);bm.push({clip:dl.length-1,start:N>1?+(st+j*per).toFixed(2):st,end:N>1?+(st+(j+1)*per).toFixed(2):en,effect:$('#brx'+i).value,transition:$('#brt'+i).value})})}}
-    else if($('#br'+i).files[0])toast('Scene '+(i+1)+': B-roll tabhi lagegi jab is scene ka clip bhi upload ho.')});
+      bfs.forEach((bf,j)=>{fd.append('broll_files',bf);bm.push({clip:ci,file:fileN++,start:N>1?+(st+j*per).toFixed(2):st,end:N>1?+(st+(j+1)*per).toFixed(2):en,effect:$('#brx'+i).value,transition:$('#brt'+i).value})})}
+    if(cuts.length){
+      needRights=true;if(!$('#tvr'+i).checked)rightsOk=false;
+      fd.append('broll_files',TRIM[i].file);const fi=fileN++;
+      cuts.forEach(c=>bm.push({clip:ci,file:fi,start:+c.start.toFixed(2),end:+(c.start+(c.out-c.in)).toFixed(2),src_in:+c.in.toFixed(2),src_out:+c.out.toFixed(2),effect:'static',transition:$('#brt'+i).value}))}
+  }
+  if(needRights&&!rightsOk)return toast('Video ka hissa lagane se pehle "is video ka mere paas haq hai" tick karo.');
+  fd.append('broll_rights',needRights?'1':'0');
   if(!dl.length)return toast('Kam se kam ek clip upload karo');
   fd.append('broll_meta',JSON.stringify(bm));
   fd.append('dialogues',JSON.stringify(dl));fd.append('topic',studio.topic);fd.append('caption',studio.caption);
