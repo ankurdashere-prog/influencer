@@ -512,6 +512,20 @@ def _zoompan(effect: str, n: int) -> tuple[str, str, str]:
     return table.get(effect, table["slow_push"])
 
 
+def _crop_chain(effect: str, length: float, w: int, h: int, fps: int) -> str:
+    """Photo ka zoom/pan: bade canvas (1.3x) se time-based crop, phir w x h. (`t` = second)"""
+    L = max(length, 0.1)
+    p = f"(t/{L:.3f})"
+    # crop window ka size (cw, ch) 1.3x canvas ka hissa; z = zoom (1 = poora canvas ka 1/1.3)
+    zoom = {"slow_push": f"(1+0.10*{p})", "zoom_in": f"(1+0.20*{p})", "zoom_out": f"(1.20-0.20*{p})",
+            "blur_bg": f"(1+0.06*{p})"}.get(effect, "1.15" if effect.startswith("pan") else "1")
+    px = {"pan_left": f"(1-{p})", "pan_right": p}.get(effect, "0.5")
+    py = {"pan_up": f"(1-{p})", "pan_down": p}.get(effect, "0.5")
+    # pehle zoom ke hisaab se scale (frame-wise), phir fixed w x h ka crop (x/y pan ke liye)
+    return (f"fps={fps},scale=w='trunc({w}*{zoom}/2)*2':h='trunc({h}*{zoom}/2)*2':eval=frame:flags=bilinear,"
+            f"crop={w}:{h}:x='(iw-{w})*{px}':y='(ih-{h})*{py}':exact=1,setsar=1,format=yuva420p")
+
+
 def _prep_image(src: Path, out: Path, w: int, h: int, blur_bg: bool) -> Path:
     """Photo ko w x h canvas par ek baar taiyar karta hai (cover-crop, ya poori photo + blur background)."""
     from PIL import Image, ImageFilter, ImageOps
@@ -538,10 +552,10 @@ def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | N
     fade = min(fade, length / 3)
     is_img = media.suffix.lower() in _IMG_EXT
     if is_img:
-        z, x, y = _zoompan(effect, int(length * fps))
-        prepared = _prep_image(media, dst.with_suffix(".bg.png"), int(w * 1.5) // 2 * 2, int(h * 1.5) // 2 * 2,
+        # Photo ek baar 1.3x canvas par; fir har frame par sirf crop (zoompan se kai guna tez, kam CPU wale server par bhi)
+        prepared = _prep_image(media, dst.with_suffix(".bg.png"), int(w * 1.3) // 2 * 2, int(h * 1.3) // 2 * 2,
                                effect == "blur_bg")
-        chain = f"zoompan=z='{z}':x='{x}':y='{y}':d=1:s={w}x{h}:fps={fps},setsar=1,format=yuva420p"
+        chain = _crop_chain(effect, length, w, h, fps)
         src_args = ["-loop", "1", "-framerate", str(fps), "-t", f"{length:.3f}", "-i", str(prepared)]
     else:
         chain = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={fps},"
@@ -559,8 +573,8 @@ def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | N
     fc = (f"[1:v]{chain}[b];[0:v][b]overlay={ox}enable='between(t,{start:.3f},{stop:.3f})':eof_action=pass:"
           "repeatlast=0[v]")
     run_ff(["-i", str(base), *src_args, "-filter_complex", fc, "-map", "[v]", "-map", "0:a?", "-c:a", "copy",
-            "-threads", "1", "-filter_threads", "1", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-            "-x264-params", "rc-lookahead=8:ref=2", "-pix_fmt", "yuv420p", "-t", f"{dur:.3f}", str(dst)])
+            "-threads", "1", "-filter_threads", "1", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "17",
+            "-pix_fmt", "yuv420p", "-t", f"{dur:.3f}", str(dst)], timeout=240)
     if is_img:
         dst.with_suffix(".bg.png").unlink(missing_ok=True)
     return dst
@@ -597,9 +611,12 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
             else:
                 say(f"Clip {i + 1}: apni photo/video {max(bl['start'], 0):g} second se laga raha hu...")
                 out_b = work / f"br_{i}.mp4"
-                apply_broll(dst, out_b, bl["path"], max(b_start, 0.0), b_end, bl.get("effect", "slow_push"),
-                            bl.get("transition", "fade"), w, h, fps)
-                dst = out_b
+                try:
+                    apply_broll(dst, out_b, bl["path"], max(b_start, 0.0), b_end, bl.get("effect", "slow_push"),
+                                bl.get("transition", "fade"), w, h, fps)
+                    dst = out_b
+                except Exception as e:  # B-roll fail ho to reel bina B-roll ke aage badhe
+                    say(f"Clip {i + 1}: photo/video lagane mein dikkat ({str(e)[:120]}), bina B-roll ke aage badh raha hu.")
         names.append(dst.name)
         text = (dialogues[i] if i < len(dialogues) else "").strip()
         if text:
