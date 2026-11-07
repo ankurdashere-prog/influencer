@@ -147,6 +147,9 @@
     <label for="stMusicVol">Music ki awaaz: <span id="stMusicVolVal">12</span>%</label>
     <input type="range" id="stMusicVol" min="0" max="40" value="12">
     <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="stMusic" checked> File upload na ho to assets/music se music lo (agar ho)</label>
+    <label style="font-weight:500;display:flex;gap:8px;align-items:center"><input type="checkbox" id="stZoom" checked> Auto micro-zoom (doctor ke lambe hisse mein har ~3 second par halka zoom in/out)</label>
+    <div class="row"><button class="btn alt" id="stPlan">Editor se plan lo (pacing)</button></div>
+    <div id="stPlanBox" class="card hide"></div>
     <div class="row"><button class="btn" id="stGo">Clips jodkar reel banao</button></div>
     <div class="log hide" id="stLog"></div>
   </div>
@@ -329,7 +332,7 @@ $('#stGo').onclick=async()=>{
   if(!dl.length)return toast('Kam se kam ek clip upload karo');
   fd.append('broll_meta',JSON.stringify(bm));
   fd.append('dialogues',JSON.stringify(dl));fd.append('topic',studio.topic);fd.append('caption',studio.caption);
-  fd.append('music',$('#stMusic').checked?'1':'0');fd.append('speed',$('#stSpeed').value);fd.append('hook_text',$('#stHook').value);fd.append('end_text',$('#stEnd').value);
+  fd.append('music',$('#stMusic').checked?'1':'0');fd.append('speed',$('#stSpeed').value);fd.append('auto_zoom',$('#stZoom').checked?'1':'0');fd.append('hook_text',$('#stHook').value);fd.append('end_text',$('#stEnd').value);
   fd.append('music_volume',String($('#stMusicVol').value/100));const mf=$('#stMusicFile').files[0];if(mf)fd.append('music_file',mf);
   const vf=$('#stVoiceFile').files[0];
   if(vf)fd.append('voice_file',vf);
@@ -344,6 +347,29 @@ $('#stGo').onclick=async()=>{
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.detail||r.statusText)}
     const {job}=await r.json();await runJob(job,$('#stLog'));toast('Reel ban gayi. Library mein dekho.');}
   catch(e){toast('Error: '+e.message)}b.disabled=false;
+};
+
+// editor agent: pacing plan (card) + approval
+const KIND_ICON={doctor:'Doctor',broll:'B-roll',cutaway:'Cutaway'};
+$('#stPlan').onclick=async()=>{
+  if(!studio||!studio.scenes)return toast('Pehle script aur prompts banao');
+  const hb=studio.scenes.map((s,i)=>!!($('#br'+i)&&$('#br'+i).files[0]));
+  const box=$('#stPlanBox');
+  try{
+    const p=await post('/api/clips/plan',{scenes:studio.scenes.length,seconds:studio.seconds||8,presenter:studio.presenter||4,has_broll:hb});
+    box.replaceChildren(el('b',{},'Editor ki salah'),el('p',{class:'mute'},p.summary));
+    p.clips.forEach(c=>{
+      const bar=el('div',{style:'display:flex;height:22px;border-radius:6px;overflow:hidden;margin:6px 0;font-size:11px'});
+      c.segments.forEach(g=>bar.append(el('div',{style:'flex:'+(g.end-g.start)+';padding:2px 6px;white-space:nowrap;overflow:hidden;color:#111;background:'+(g.kind==='broll'?'#ffb347':g.kind==='cutaway'?'#9ad0ff':'#a8e6a1')},(KIND_ICON[g.kind]||'')+' '+g.start+'-'+g.end+'s')));
+      box.append(el('div',{},el('b',{},'Clip '+c.clip+' (confidence '+Math.round(c.confidence*100)+'%)'),bar,
+        el('div',{class:'mute'},c.notes.join(' ')+(c.zoom_points.length?' Zoom ka mod: '+c.zoom_points.join(', ')+' s par.':''))));
+    });
+    box.append(el('div',{class:'row'},el('button',{class:'btn',onclick:()=>{
+      let n=0;p.clips.forEach(c=>{const i=c.clip-1;if(c.broll&&$('#brs'+i)){$('#brs'+i).value=c.broll.start;$('#bre'+i).value=c.broll.end;$('#brx'+i).value=c.broll.effect;$('#brt'+i).value=c.broll.transition;n++}});
+      $('#stZoom').checked=true;
+      toast(n?('Plan lag gaya: '+n+' clip par B-roll ka time bhar diya. Photo attach karna na bhoolna.'):'Plan lag gaya (micro-zoom on). B-roll wale clip par photo attach karo.')}},'Plan approve karo aur bharo')));
+    box.classList.remove('hide');
+  }catch(e){toast('Error: '+e.message)}
 };
 
 // library
