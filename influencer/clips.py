@@ -529,7 +529,14 @@ def _crop_chain(effect: str, length: float, w: int, h: int, fps: int) -> str:
 def _prep_image(src: Path, out: Path, w: int, h: int, blur_bg: bool) -> Path:
     """Photo ko w x h canvas par ek baar taiyar karta hai (cover-crop, ya poori photo + blur background)."""
     from PIL import Image, ImageFilter, ImageOps
-    im = ImageOps.exif_transpose(Image.open(src)).convert("RGB")
+    im0 = Image.open(src)
+    try:
+        im0.draft("RGB", (w, h))  # bade JPEG ko decode karte waqt hi chhota (RAM bachti hai)
+    except Exception:
+        pass
+    im = ImageOps.exif_transpose(im0).convert("RGB")
+    if max(im.size) > max(w, h) * 2:
+        im.thumbnail((max(w, h) * 2, max(w, h) * 2), Image.LANCZOS)
     cover = ImageOps.fit(im, (w, h), Image.LANCZOS)
     if blur_bg:
         small = cover.resize((max(w // 8, 2), max(h // 8, 2)), Image.BILINEAR).filter(ImageFilter.GaussianBlur(3))
@@ -537,7 +544,7 @@ def _prep_image(src: Path, out: Path, w: int, h: int, blur_bg: bool) -> Path:
         fit = ImageOps.contain(im, (w, h), Image.LANCZOS)
         canvas.paste(fit, ((w - fit.width) // 2, (h - fit.height) // 2))
         cover = canvas
-    cover.save(out)
+    cover.save(out, quality=92)  # JPEG: ffmpeg mein PNG se ~120 MB kam RAM
     return out
 
 
@@ -553,7 +560,7 @@ def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | N
     is_img = media.suffix.lower() in _IMG_EXT
     if is_img:
         # Photo ek baar 1.3x canvas par; fir har frame par sirf crop (zoompan se kai guna tez, kam CPU wale server par bhi)
-        prepared = _prep_image(media, dst.with_suffix(".bg.png"), int(w * 1.3) // 2 * 2, int(h * 1.3) // 2 * 2,
+        prepared = _prep_image(media, dst.with_suffix(".bg.jpg"), int(w * 1.3) // 2 * 2, int(h * 1.3) // 2 * 2,
                                effect == "blur_bg")
         chain = _crop_chain(effect, length, w, h, fps)
         src_args = ["-loop", "1", "-framerate", str(fps), "-t", f"{length:.3f}", "-i", str(prepared)]
@@ -576,7 +583,7 @@ def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | N
             "-threads", "1", "-filter_threads", "1", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "17",
             "-pix_fmt", "yuv420p", "-t", f"{dur:.3f}", str(dst)], timeout=240)
     if is_img:
-        dst.with_suffix(".bg.png").unlink(missing_ok=True)
+        dst.with_suffix(".bg.jpg").unlink(missing_ok=True)
     return dst
 
 
