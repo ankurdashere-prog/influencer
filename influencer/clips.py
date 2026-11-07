@@ -100,6 +100,19 @@ def _cut_words(t: str, n: int) -> str:
     return cut or t[:n]
 
 
+# Camera presets (presenter wale hisse ke liye). Halki moves, taaki chehra aur lip-sync na bigde.
+CAMERA_PRESETS = {
+    "auto": ("Auto (Flow khud chune)", ""),
+    "static": ("Static (camera hilega nahi)", "Locked-off static camera, no camera movement."),
+    "push_in": ("Slow push-in (dheere paas)", "Very slow smooth push-in toward the face."),
+    "pull_out": ("Slow pull-out (dheere door)", "Very slow smooth pull-back, gradually revealing more of the room."),
+    "handheld": ("Handheld (natural halka hilna)", "Handheld phone camera with natural, subtle shake."),
+    "low_angle": ("Low angle (hero look)", "Low-angle shot looking slightly up at the presenter, steady."),
+    "closeup": ("Close-up (chehra bhara)", "Tight close-up on the face and shoulders, steady camera."),
+    "arc": ("Halka arc (side se ghoomta)", "Camera drifts in a very slow, slight arc to the left around the presenter."),
+}
+
+
 def _avatar_norm(a: dict | None) -> dict | None:
     if not a or not isinstance(a, dict):
         return None
@@ -122,22 +135,25 @@ def _avatar_norm(a: dict | None) -> dict | None:
     return {"name": clean("name", "Avatar", 60), "role": clean("role", "", 80),
             "gender": "female" if str(a.get("gender", "male")).lower().startswith("f") else "male",
             "look": clean("look", "", 300), "language": clean("language", "Hinglish (Hindi in Roman script)", 60),
-            "scenes": min(max(n, 1), 6), "seconds": sec, "presenter": pres}
+            "scenes": min(max(n, 1), 6), "seconds": sec, "presenter": pres,
+            "camera": str(a.get("camera") or "auto") if str(a.get("camera") or "auto") in CAMERA_PRESETS else "auto"}
 
 
 def build_avatar_prompt(s: dict, a: dict) -> str:
     he, his = ("He", "His") if a["gender"] == "male" else ("She", "Her")
     look = f" {a['look'].rstrip('. ')}." if a["look"] else ""
+    cam = CAMERA_PRESETS.get(a.get("camera", "auto"), CAMERA_PRESETS["auto"])[1]
+    cam = f" {cam}" if cam else ""
     return (
         "IDENTITY LOCK (read this fully before creating the video): use ONLY the attached avatar for the person. "
         "Keep the exact same face, hairstyle, facial hair, skin tone, body, outfit, voice, background and lighting "
         f"as the avatar in this clip. Do not change anything about the person.{look}\n"
         f"Format: vertical 9:16, {a['seconds']} seconds, realistic phone-camera look, no subtitles, no text or logos added on screen.\n"
-        + (f"Seconds 0-{a['seconds']} (presenter on camera for the whole clip, never leaves the frame): {s['camera_angle']}. "
+        + (f"Seconds 0-{a['seconds']} (presenter on camera for the whole clip, never leaves the frame): {s['camera_angle']}.{cam} "
            f"{s['action']}. {he} speaks to the camera in {a['language']}, clear natural voice, lips in sync, speaking "
            f"continuously until the last second: \"{s['presenter_line']}\"\n"
            if a["presenter"] >= a["seconds"] else
-           f"Seconds 0-{a['presenter']} (presenter on camera): {s['camera_angle']}. {s['action']}. "
+           f"Seconds 0-{a['presenter']} (presenter on camera): {s['camera_angle']}.{cam} {s['action']}. "
            f"{he} speaks to the camera in {a['language']}, clear natural voice, lips in sync: \"{s['presenter_line']}\"\n"
            f"Seconds {a['presenter']}-{a['seconds']} (cutaway visuals, presenter not on screen): {s['visual']}. "
            f"{his} voiceover continues in the exact same voice and tone: \"{s['voiceover_line']}\"\n")
