@@ -19,7 +19,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .. import clips as clipstudio, editor_agent, images, persist, pipeline, voice as voicelab
+from .. import clips as clipstudio, editor_agent, images, persist, pipeline, story, voice as voicelab
 from ..config import (IST, OUTPUT_DIR, REFERENCE_IMAGE, ROOT, env, load_history, now_ist)
 
 STATIC = Path(__file__).parent / "static"
@@ -568,12 +568,74 @@ async def voice_delete(voice_id: str):
     return {"ok": True}
 
 
+# ---- story studio (library + brief -> scene plan) ----
+@app.get("/api/library")
+def library_list():
+    return {"items": story.list_items(), "kinds": story.KIND_LABEL}
+
+
+@app.post("/api/library")
+async def library_add(file: UploadFile = File(...), kind: str = Form("character"), name: str = Form(""),
+                      desc: str = Form(""), consent: str = Form("0")):
+    data = await file.read(story.MAX_BYTES + 1)
+    try:
+        return await run_in_threadpool(story.add_item, kind, name, desc, file.filename or "", data, consent == "1")
+    except story.StoryError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/library/{iid}")
+def library_delete(iid: str):
+    if not re.fullmatch(r"[0-9a-f]{10}", iid) or not story.delete_item(iid):
+        raise HTTPException(404, "Item nahi mila")
+    return {"ok": True}
+
+
+@app.post("/api/story/plan")
+async def story_plan(request: Request):
+    body = await request.json()
+
+    def ids(k):
+        v = body.get(k)
+        return [str(x) for x in v][:12] if isinstance(v, list) else []
+    try:
+        total = float(body.get("total_seconds") or 24)
+    except (TypeError, ValueError):
+        total = 24.0
+    try:
+        return await run_in_threadpool(story.plan_story, str(body.get("brief") or ""), total, ids("characters"),
+                                       ids("locations"), ids("things"))
+    except story.StoryError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/story/prompts")
+async def story_prompts(request: Request):
+    """User ne plan mein line/camera edit ki ho to prompts dobara banao."""
+    plan = await request.json()
+    if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or len(plan["scenes"]) > story.MAX_SCENES:
+        raise HTTPException(400, "Plan sahi nahi hai")
+    for sc in plan["scenes"]:
+        if not isinstance(sc, dict):
+            raise HTTPException(400, "Plan sahi nahi hai")
+        for k in ("line", "camera", "action", "visual", "beat"):
+            sc[k] = str(sc.get(k) or "")[:300]
+        sc["seconds"] = story.SCENE_SECONDS
+        sc["type"] = "broll" if sc.get("type") == "broll" else "talking"
+        sc["characters"] = [c for c in sc.get("characters", []) if isinstance(c, str)][:6]
+        sc["speaker"] = sc.get("speaker") if isinstance(sc.get("speaker"), str) else ""
+        sc["location"] = sc.get("location") if isinstance(sc.get("location"), str) else ""
+    return story.rebuild_prompts(plan)
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
 
 
+story.LIB_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/files", StaticFiles(directory=OUTPUT_DIR), name="files")
+app.mount("/library-files", StaticFiles(directory=story.LIB_DIR), name="library-files")
 app.mount("/character-files", StaticFiles(directory=ROOT / "character"), name="character-files")
 
 
