@@ -63,6 +63,15 @@
   body[data-wiz="1"] #stScenes{display:none}
   body[data-wiz="1"] .wstep-2,body[data-wiz="1"] .wstep-3,body[data-wiz="2"] .wstep-1,body[data-wiz="2"] .wstep-3,
   body[data-wiz="3"] .wstep-1,body[data-wiz="3"] .wstep-2{display:none!important}
+  .lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:12px}
+  .libi{border:1px solid var(--line);border-radius:10px;padding:6px;background:var(--bg);font-size:12px}
+  .libi.sel{border-color:var(--accent);background:var(--soft)}
+  .libi img,.libi video{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block}
+  .scn{border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px;background:var(--bg)}
+  .scn h3{margin:0 0 6px;font-size:15px}
+  .scn textarea{min-height:64px;font-family:inherit;font-size:14px}
+  .scn pre{white-space:pre-wrap;font:12px/1.5 ui-monospace,Consolas,monospace;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:180px;overflow:auto;margin:6px 0}
+  .warn{color:var(--bad);font-size:13px;margin:4px 0}
 </style>
 </head>
 <body>
@@ -72,6 +81,7 @@
 </header>
 <nav id="tabs">
   <button data-t="create" class="on">Create</button>
+  <button data-t="story">Story Studio</button>
   <button data-t="studio">Clip Studio</button>
   <button data-t="library">Library</button>
   <button data-t="character">Character</button>
@@ -218,6 +228,32 @@
   </div>
 </section>
 
+<section id="t-story" class="hide">
+  <div class="card">
+    <h2>1) Library (apni photo / clip)</h2>
+    <p class="mute">Kirdaar, jagah ya product ki photo ek baar daalo. Agli reels mein dobara upload nahi karni padegi. Photo ko story mein lene ke liye uske neeche tick karo.</p>
+    <div class="row" style="margin-top:8px">
+      <select id="lbKind" style="max-width:190px"><option value="character">Kirdaar (insaan)</option><option value="location">Jagah</option><option value="product">Product / cheez</option><option value="clip">Apni video clip</option></select>
+      <input type="text" id="lbName" placeholder="Naam (jaise Dr Ashish, Clinic reception)" style="flex:1;min-width:200px">
+    </div>
+    <input type="text" id="lbDesc" placeholder="Chhota detail (optional): jaise 'plastic surgeon, kaale ghunghrale baal' ya 'warm reception, sofa'" style="margin-top:8px">
+    <div class="row"><input type="file" id="lbFile" accept="image/*,video/mp4,video/quicktime"><button class="btn" id="lbAdd">Library mein jodo</button></div>
+    <label id="lbConsentRow" style="font-weight:500;display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="lbConsent"> Is insaan ne apni photo aur chehre ke AI use ki likhit permission di hai</label>
+    <div class="lib" id="lbGrid"></div>
+    <div class="mute hide" id="lbEmpty" style="margin-top:10px">Library khaali hai. Upar se pehli photo jodo.</div>
+  </div>
+  <div class="card">
+    <h2>2) Kahani (brief)</h2>
+    <textarea id="sbBrief" spellcheck="false" style="min-height:110px;font-family:inherit" placeholder="Kya hota hai likho. Jaise: Dr. clinic me enter karte hain, reception par patient intezaar kar raha hai, Dr. usse milte hain aur dheere se samjhate hain ki pehli consultation me kya hota hai."></textarea>
+    <div class="row">
+      <select id="sbLen" style="max-width:260px"><option value="24">~24 s (3 scenes)</option><option value="40" selected>~40 s (5 scenes)</option><option value="64">~64 s (8 scenes)</option><option value="16">~16 s (2 scenes)</option></select>
+      <button class="btn" id="sbPlan">Plan banao</button>
+    </div>
+    <p class="mute">Har scene ~8 s ka hota hai (Flow ki limit). Plan banne ke baad har line, camera aur prompt tum badal sakte ho.</p>
+  </div>
+  <div class="card hide" id="sbOut"></div>
+</section>
+
 <section id="t-library" class="hide">
   <div class="row" style="margin:0 0 12px"><button class="btn alt" id="refresh">Refresh</button></div>
   <div class="grid" id="items"></div>
@@ -280,8 +316,86 @@ const post=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
 
 // tabs
 function show(t){$$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));$$('main>section').forEach(s=>s.classList.toggle('hide',s.id!=='t-'+t));
-  if(t==='library')loadItems(); if(t==='character')loadCharacter(); if(t==='settings')loadSettings(); if(t==='create')loadCreate();}
+  if(t==='story')loadStory(); if(t==='library')loadItems(); if(t==='character')loadCharacter(); if(t==='settings')loadSettings(); if(t==='create')loadCreate();}
 $$('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+
+
+// story studio
+let LIB=[],PLAN=null;
+const SEL=new Set();
+async function loadStory(){
+  try{const r=await api('/api/library');LIB=r.items;renderLib()}catch(e){toast('Error: '+e.message)}
+}
+function renderLib(){
+  const g=$('#lbGrid');g.replaceChildren(...LIB.map(i=>{
+    const url='/library-files/'+i.file;
+    const media=i.kind==='clip'?el('video',{src:url,muted:true,preload:'metadata'}):el('img',{src:url,alt:i.name,loading:'lazy'});
+    const cb=el('input',{type:'checkbox',onchange:e=>{e.target.checked?SEL.add(i.id):SEL.delete(i.id);card.classList.toggle('sel',e.target.checked)}});
+    cb.checked=SEL.has(i.id);
+    const card=el('div',{class:'libi'+(cb.checked?' sel':'')},media,
+      el('div',{style:'font-weight:700;margin-top:4px'},i.name),el('div',{class:'mute'},({character:'Kirdaar',location:'Jagah',product:'Product',clip:'Clip'})[i.kind]),
+      el('label',{style:'display:flex;gap:6px;align-items:center;margin-top:4px'},cb,'Story me lo'),
+      el('button',{class:'btn danger',style:'margin-top:6px;padding:4px 8px;font-size:12px',onclick:async()=>{if(!confirm(i.name+' hata dein?'))return;
+        try{await api('/api/library/'+i.id,{method:'DELETE'});SEL.delete(i.id);loadStory()}catch(e){toast('Error: '+e.message)}}},'Hatao'));
+    return card}));
+  $('#lbEmpty').classList.toggle('hide',LIB.length>0);
+}
+$('#lbKind').onchange=()=>{$('#lbConsentRow').style.display=$('#lbKind').value==='character'?'flex':'none'};
+$('#lbAdd').onclick=async()=>{
+  const f=$('#lbFile').files[0];if(!f)return toast('Pehle photo / clip chuno');
+  if(!$('#lbName').value.trim())return toast('Naam likho');
+  const kind=$('#lbKind').value;
+  if(kind==='character'&&!$('#lbConsent').checked)return toast('Permission ka tick zaroori hai');
+  const fd=new FormData();fd.append('file',f);fd.append('kind',kind);fd.append('name',$('#lbName').value);fd.append('desc',$('#lbDesc').value);
+  fd.append('consent',$('#lbConsent').checked?'1':'0');
+  const b=$('#lbAdd');b.disabled=true;
+  try{
+    const r=await fetch('/api/library',{method:'POST',body:fd});
+    if(!r.ok){let m='Upload fail (HTTP '+r.status+')';try{m=(await r.json()).detail||m}catch{}throw new Error(m)}
+    const it=await r.json();SEL.add(it.id);$('#lbFile').value='';$('#lbName').value='';$('#lbDesc').value='';
+    toast('Library me jud gaya');await loadStory();
+  }catch(e){toast('Error: '+e.message)}
+  b.disabled=false;
+};
+$('#sbPlan').onclick=async()=>{
+  const pick=k=>LIB.filter(i=>SEL.has(i.id)&&(Array.isArray(k)?k.includes(i.kind):i.kind===k)).map(i=>i.id);
+  const body={brief:$('#sbBrief').value,total_seconds:Number($('#sbLen').value),characters:pick('character'),locations:pick('location'),things:pick(['product','clip'])};
+  if(!body.characters.length)return toast('Library me se kam se kam ek kirdaar ka "Story me lo" tick karo');
+  const b=$('#sbPlan');b.disabled=true;b.textContent='Plan ban raha hai...';
+  try{PLAN=await post('/api/story/plan',body);renderPlan();$('#sbOut').scrollIntoView({behavior:'smooth'})}
+  catch(e){toast('Error: '+e.message)}
+  b.disabled=false;b.textContent='Plan banao';
+};
+const cpy=async t=>{try{await navigator.clipboard.writeText(t);toast('Copy ho gaya')}catch{toast('Copy nahi hua, text select karke Ctrl+C dabao')}};
+function renderPlan(){
+  const o=$('#sbOut'),p=PLAN;o.classList.remove('hide');
+  const name=id=>(LIB.find(i=>i.id===id)||{}).name||id;
+  const kids=[el('h2',{},'3) Plan: '+(p.title||'Kahani')),
+    el('p',{class:'mute'},p.n_scenes+' scenes, kul ~'+p.total_seconds+' s. '+(p.source==='ai'?'AI ne banaya, ab tum check karke badlo.':'Simple template hai, bolne ki lines tumhe likhni hongi.')+(p.summary?' '+p.summary:''))];
+  p.warnings.forEach(w=>kids.push(el('div',{class:'warn'},w)));
+  p.scenes.forEach((sc,k)=>{
+    const line=el('textarea',{spellcheck:'false'});line.value=sc.line;
+    const cam=el('input',{type:'text'});cam.value=sc.camera;
+    const wc=el('span',{class:'mute'},sc.words+' shabd');
+    const pf=el('pre',{},sc.flow_prompt),pk=el('pre',{},sc.keyframe_prompt);
+    line.oninput=()=>{sc.line=line.value;wc.textContent=(line.value.match(/\S+/g)||[]).length+' shabd (8 s me ~14-19 theek)'};
+    cam.oninput=()=>{sc.camera=cam.value};
+    kids.push(el('div',{class:'scn'},
+      el('h3',{},'Scene '+sc.n+' ('+sc.seconds+' s) - '+(sc.type==='talking'?'Bolta hua: '+name(sc.speaker):'B-roll (voiceover)')),
+      el('div',{class:'mute'},sc.beat+(sc.location?' | Jagah: '+name(sc.location):'')),
+      el('label',{},'Jo bola jayega ',wc),line,
+      el('label',{},'Camera'),cam,
+      el('details',{},el('summary',{},'Flow prompt'),pf,el('button',{class:'btn alt',onclick:()=>cpy(sc.flow_prompt)},'Flow prompt copy karo')),
+      el('details',{},el('summary',{},'Pehli image ka prompt (ChatGPT ke liye)'),pk,el('button',{class:'btn alt',onclick:()=>cpy(sc.keyframe_prompt)},'Image prompt copy karo'))));
+    sc._pf=pf;sc._pk=pk;
+  });
+  kids.push(el('div',{class:'row'},el('button',{class:'btn',onclick:async()=>{
+    try{const q=JSON.parse(JSON.stringify(PLAN,(k,v)=>k.startsWith('_')?undefined:v));PLAN=await post('/api/story/prompts',q);renderPlan();toast('Prompts update ho gaye')}catch(e){toast('Error: '+e.message)}}},'Line/camera badli? Prompts update karo'),
+    el('button',{class:'btn alt',onclick:()=>cpy(PLAN.scenes.map(s=>'SCENE '+s.n+'\n'+s.line).join('\n\n'))},'Saari lines copy karo')));
+  if(p.caption)kids.push(el('p',{class:'mute'},'Caption: '+p.caption+(p.hashtags.length?'  #'+p.hashtags.join(' #'):'')));
+  kids.push(el('p',{class:'mute'},'Aage: har scene ka clip Flow me banao, phir Clip Studio me upload karke reel jodo.'));
+  o.replaceChildren(...kids);
+}
 
 // job polling
 async function runJob(jobId,logEl){
