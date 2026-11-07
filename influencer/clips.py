@@ -660,28 +660,31 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
                 auto_zoom_i = True
         else:
             auto_zoom_i = False
-        skip = None
-        bl = (broll or {}).get(i)
-        if bl:
-            head, sp = info.get("head", 0.0), info.get("speed", 1.0) or 1.0
+        items = (broll or {}).get(i) or []
+        items = [items] if isinstance(items, dict) else list(items)
+        head, sp = info.get("head", 0.0), info.get("speed", 1.0) or 1.0
+        win: list[tuple[float, float]] = []
+        for n_it, bl in enumerate(sorted(items, key=lambda x: float(x["start"]))):
             b_start = (float(bl["start"]) - head) / sp
             b_end = None if bl.get("end") is None else (float(bl["end"]) - head) / sp
+            tag = f"Clip {i + 1}" + (f" (B-roll {n_it + 1}/{len(items)})" if len(items) > 1 else "")
             if b_start >= dur - 0.5:
-                say(f"Clip {i + 1}: B-roll ka start ({bl['start']}s) clip ke aakhir ke bahut paas hai, chhod diya.")
-            else:
-                say(f"Clip {i + 1}: apni photo/video {max(bl['start'], 0):g} second se laga raha hu...")
-                out_b = work / f"br_{i}.mp4"
-                try:
-                    apply_broll(dst, out_b, bl["path"], max(b_start, 0.0), b_end, bl.get("effect", "slow_push"),
-                                bl.get("transition", "fade"), w, h, fps)
-                    dst = out_b
-                    bs = max(b_start, 0.0)
-                    be = dur if (b_end is None or b_end > dur - 0.15 or b_end < bs + 0.5) else b_end
-                    skip = (bs, be)
-                    say(f"Clip {i + 1}: B-roll lag gayi ({bs:.1f}-{be:.1f} s).")
-                    events += [t0 + bs, t0 + be]
-                except Exception as e:  # B-roll fail ho to reel bina B-roll ke aage badhe
-                    say(f"Clip {i + 1}: photo/video lagane mein dikkat ({str(e)[:120]}), bina B-roll ke aage badh raha hu.")
+                say(f"{tag}: B-roll ka start ({bl['start']}s) clip ke aakhir ke bahut paas hai, chhod diya.")
+                continue
+            say(f"{tag}: apni photo/video {max(bl['start'], 0):g} second se laga raha hu...")
+            out_b = work / f"br_{i}_{n_it}.mp4"
+            try:
+                apply_broll(dst, out_b, bl["path"], max(b_start, 0.0), b_end, bl.get("effect", "slow_push"),
+                            bl.get("transition", "fade"), w, h, fps)
+                dst = out_b
+                bs = max(b_start, 0.0)
+                be = dur if (b_end is None or b_end > dur - 0.15 or b_end < bs + 0.5) else b_end
+                win.append((bs, be))
+                say(f"{tag}: B-roll lag gayi ({bs:.1f}-{be:.1f} s).")
+                events += [t0 + bs, t0 + be]
+            except Exception as e:  # B-roll fail ho to reel bina B-roll ke aage badhe
+                say(f"{tag}: photo/video lagane mein dikkat ({str(e)[:120]}), bina B-roll ke aage badh raha hu.")
+        skip = (min(x[0] for x in win), max(x[1] for x in win)) if win else None
         if auto_zoom_i:
             events += editor_agent.zoom_events(t0, dur, skip=skip)
         names.append(dst.name)
