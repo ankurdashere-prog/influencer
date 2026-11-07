@@ -19,9 +19,12 @@ def ffmpeg_exe() -> str:
         raise RuntimeError("ffmpeg nahi mila. `pip install imageio-ffmpeg` ya ffmpeg install karo.") from e
 
 
-def run_ff(args: list[str], cwd: Path | None = None) -> None:
+def run_ff(args: list[str], cwd: Path | None = None, timeout: float | None = None) -> None:
     cmd = [ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y", *args]
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    try:
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"ffmpeg {timeout:.0f}s mein khatam nahi hua (timeout)")
     if p.returncode != 0:
         raise RuntimeError(p.stderr[-900:] or "ffmpeg failed")
 
