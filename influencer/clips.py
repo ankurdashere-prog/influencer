@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from . import captions
+from . import captions, editor_agent
 from .config import OUTPUT_DIR, add_history, env, now_ist
 from .llm import gemini_json
 from .tts import Word, estimate_words
@@ -605,9 +605,10 @@ def apply_broll(base: Path, dst: Path, media: Path, start: float, end: float | N
 
 def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, music: Path | None = None,
           say=print, hook: str = "", end_text: str = "", voice: Path | None = None, convert=None,
-          broll: dict | None = None) -> Path:
+          broll: dict | None = None, auto_zoom: bool = False) -> Path:
     w, h, fps = int(video_cfg.get("width", 1080)), int(video_cfg.get("height", 1920)), int(video_cfg.get("fps", 30))
     names, words, t0 = [], [], 0.0
+    events: list[float] = []
     if convert:
         silent = [c.name for c in clips if not has_audio(c)]
         say("Awaaz: ElevenLabs clone voice (har clip ki awaaz badli jayegi)."
@@ -624,6 +625,20 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
         dst = work / f"norm_{i}.mp4"
         info: dict = {}
         dur = _normalize(src, dst, w, h, fps, i, video_cfg, info)
+        if i > 0:
+            events.append(t0)  # clip ka cut
+        if auto_zoom and dur >= editor_agent.MIN_ZOOM_DUR:
+            say(f"Clip {i + 1}: doctor ke hisse mein halka zoom in/out laga raha hu...")
+            try:
+                dst = editor_agent.apply_micro_zoom(dst, work / f"zm_{i}.mp4", w, h, dur)
+            except Exception as e:
+                say(f"Clip {i + 1}: micro-zoom nahi lag paya ({str(e)[:100]}), bina zoom ke aage badh raha hu.")
+                auto_zoom_i = False
+            else:
+                auto_zoom_i = True
+        else:
+            auto_zoom_i = False
+        skip = None
         bl = (broll or {}).get(i)
         if bl:
             head, sp = info.get("head", 0.0), info.get("speed", 1.0) or 1.0
@@ -638,8 +653,14 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
                     apply_broll(dst, out_b, bl["path"], max(b_start, 0.0), b_end, bl.get("effect", "slow_push"),
                                 bl.get("transition", "fade"), w, h, fps)
                     dst = out_b
+                    bs = max(b_start, 0.0)
+                    be = dur if (b_end is None or b_end > dur - 0.15 or b_end < bs + 0.5) else b_end
+                    skip = (bs, be)
+                    events += [t0 + bs, t0 + be]
                 except Exception as e:  # B-roll fail ho to reel bina B-roll ke aage badhe
                     say(f"Clip {i + 1}: photo/video lagane mein dikkat ({str(e)[:120]}), bina B-roll ke aage badh raha hu.")
+        if auto_zoom_i:
+            events += editor_agent.zoom_events(t0, dur, skip=skip)
         names.append(dst.name)
         text = (dialogues[i] if i < len(dialogues) else "").strip()
         if text:
@@ -691,6 +712,14 @@ def merge(clips: list[Path], dialogues: list[str], work: Path, video_cfg: dict, 
             final(False)
         else:
             raise
+    try:  # retention check: hamare lagaye badlav + video mein asli scene-cuts
+        ev = events + [c for c in editor_agent.detect_cuts(out) if c < t0]
+        rep = editor_agent.retention_report(ev, t0)
+        for line in editor_agent.format_report(rep):
+            say(line)
+        (work / "retention.json").write_text(json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        say(f"Retention check nahi ho paya ({str(e)[:80]}).")
     return out
 
 
