@@ -271,7 +271,7 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
         except (TypeError, ValueError):
             return default
 
-    broll: dict[int, dict] = {}
+    broll: dict[int, list[dict]] = {}
     try:
         metas = json.loads(broll_meta)
         metas = metas if isinstance(metas, list) else []
@@ -297,13 +297,16 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
         if err:
             shutil.rmtree(work, ignore_errors=True)
             raise HTTPException(400, err)
-        bp = work / f"broll_in_{k}{bext}"
+        if len(broll.get(k, [])) >= 4:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, f"Clip {k + 1} par 4 se zyada photo/video nahi lag sakti.")
+        bp = work / f"broll_in_{k}_{j}{bext}"
         bp.write_bytes(bdata)
         end = meta.get("end")
-        broll[k] = {"path": bp, "start": _num(meta.get("start"), 0.0, 30.0, 6.0),
+        broll.setdefault(k, []).append({"path": bp, "start": _num(meta.get("start"), 0.0, 30.0, 6.0),
                     "end": None if end in (None, "", 0) else _num(end, 0.0, 30.0, 0.0) or None,
                     "effect": meta.get("effect") if meta.get("effect") in clipstudio.BROLL_EFFECTS else "slow_push",
-                    "transition": meta.get("transition") if meta.get("transition") in clipstudio.BROLL_TRANSITIONS else "fade"}
+                    "transition": meta.get("transition") if meta.get("transition") in clipstudio.BROLL_TRANSITIONS else "fade"})
 
     cfg = dict(pipeline.settings()["video"], clip_speed=_num(speed, 0.8, 1.5, 1.1),
                music_volume=_num(music_volume, 0.0, 0.6, 0.12))
