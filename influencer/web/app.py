@@ -245,7 +245,7 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
                       speed: str = Form("1.1"), music_volume: str = Form("0.12"),
                       hook_text: str = Form(""), end_text: str = Form(""), voice_name: str = Form(""), voice_id: str = Form(""),
                       music_file: UploadFile | None = File(None), voice_file: UploadFile | None = File(None),
-                      broll_files: list[UploadFile] = File([]), broll_meta: str = Form("[]"), auto_zoom: str = Form("1")):
+                      broll_files: list[UploadFile] = File([]), broll_meta: str = Form("[]"), auto_zoom: str = Form("1"), broll_rights: str = Form("0")):
     if not clips or len(clips) > 12:
         raise HTTPException(400, "1 se 12 clips chahiye")
     try:
@@ -277,36 +277,60 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
         metas = metas if isinstance(metas, list) else []
     except (json.JSONDecodeError, TypeError):
         metas = []
+    files_saved: dict[int, tuple[Path, str]] = {}
     for j, bf in enumerate(broll_files or []):
         if not bf.filename:
             continue
-        meta = metas[j] if j < len(metas) and isinstance(metas[j], dict) else {}
+        bext = Path(bf.filename).suffix.lower()
+        bdata = await bf.read()
+        if bext not in clipstudio.BROLL_EXT:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, "B-roll photo (jpg, png, webp) ya video (mp4, mov, webm) honi chahiye.")
+        if len(bdata) > 60_000_000 or len(bdata) < 500:
+            shutil.rmtree(work, ignore_errors=True)
+            raise HTTPException(400, "B-roll file khaali hai ya 60 MB se badi hai.")
+        bp = work / f"broll_file_{j}{bext}"
+        bp.write_bytes(bdata)
+        files_saved[j] = (bp, bext)
+    n_items = 0
+    for j, meta in enumerate(metas):
+        if not isinstance(meta, dict):
+            continue
         try:
             k = int(meta.get("clip"))
         except (TypeError, ValueError):
             k = -1
-        bext = Path(bf.filename).suffix.lower()
-        bdata = await bf.read()
+        try:
+            fi = int(meta.get("file", j))  # ek hi file ke kai cuts: meta mein file ka number
+        except (TypeError, ValueError):
+            fi = -1
         err = None
         if not 0 <= k < len(paths):
             err = "B-roll kis clip par lagani hai, ye samajh nahi aaya. Page refresh karke dobara try karo."
-        elif bext not in clipstudio.BROLL_EXT:
-            err = "B-roll photo (jpg, png, webp) ya video (mp4, mov, webm) honi chahiye."
-        elif len(bdata) > 60_000_000 or len(bdata) < 500:
-            err = f"Clip {k + 1} ki B-roll khaali hai ya 60 MB se badi hai."
+        elif fi not in files_saved:
+            continue  # is meta ki file nahi aayi
+        elif len(broll.get(k, [])) >= 4:
+            err = f"Clip {k + 1} par 4 se zyada photo/video nahi lag sakti."
+        has_cut = meta.get("src_in") not in (None, "")
+        if not err and has_cut and files_saved[fi][1] not in clipstudio._VID_EXT:
+            err = "Hissa kaatna sirf video par hota hai."
+        if not err and has_cut and broll_rights != "1":
+            err = "Video ka hissa lagane se pehle 'is video ka mere paas haq hai' tick karo."
         if err:
             shutil.rmtree(work, ignore_errors=True)
             raise HTTPException(400, err)
-        if len(broll.get(k, [])) >= 4:
-            shutil.rmtree(work, ignore_errors=True)
-            raise HTTPException(400, f"Clip {k + 1} par 4 se zyada photo/video nahi lag sakti.")
-        bp = work / f"broll_in_{k}_{j}{bext}"
-        bp.write_bytes(bdata)
         end = meta.get("end")
-        broll.setdefault(k, []).append({"path": bp, "start": _num(meta.get("start"), 0.0, 30.0, 6.0),
-                    "end": None if end in (None, "", 0) else _num(end, 0.0, 30.0, 0.0) or None,
-                    "effect": meta.get("effect") if meta.get("effect") in clipstudio.BROLL_EFFECTS else "slow_push",
-                    "transition": meta.get("transition") if meta.get("transition") in clipstudio.BROLL_TRANSITIONS else "fade"})
+        item = {"path": files_saved[fi][0], "start": _num(meta.get("start"), 0.0, 30.0, 6.0),
+                "end": None if end in (None, "", 0) else _num(end, 0.0, 30.0, 0.0) or None,
+                "effect": meta.get("effect") if meta.get("effect") in clipstudio.BROLL_EFFECTS else "slow_push",
+                "transition": meta.get("transition") if meta.get("transition") in clipstudio.BROLL_TRANSITIONS else "fade"}
+        if has_cut:
+            si = _num(meta.get("src_in"), 0.0, 7200.0, 0.0)
+            so = meta.get("src_out")
+            so = None if so in (None, "") else _num(so, 0.0, 7200.0, 0.0)
+            item["src_in"], item["src_out"] = si, (so if so is not None and so > si + 0.3 else None)
+        broll.setdefault(k, []).append(item)
+        n_items += 1
 
     cfg = dict(pipeline.settings()["video"], clip_speed=_num(speed, 0.8, 1.5, 1.1),
                music_volume=_num(music_volume, 0.0, 0.6, 0.12))
