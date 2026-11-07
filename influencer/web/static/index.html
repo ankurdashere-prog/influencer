@@ -113,6 +113,8 @@
       <select id="avGender"><option value="male">Purush</option><option value="female">Mahila</option></select>
       <label for="avLook">Look (kapde aur background, jaisa avatar mein hai)</label>
       <input type="text" id="avLook" maxlength="300" placeholder="jaise: black scrub top, red wall background, round mirror">
+      <label for="avCam">Camera movement (doctor wale hisse mein)</label>
+      <select id="avCam"><option value="auto">Auto (Flow khud chune)</option><option value="static">Static (camera hilega nahi)</option><option value="push_in">Slow push-in (dheere paas)</option><option value="pull_out">Slow pull-out (dheere door)</option><option value="handheld">Handheld (natural halka hilna)</option><option value="low_angle">Low angle (hero look)</option><option value="closeup">Close-up (chehra bhara)</option><option value="arc">Halka arc (side se ghoomta)</option></select>
       <label for="avScenes">Kitne scenes (1 se 6)</label>
       <input type="number" id="avScenes" min="1" max="6" value="2">
       <label for="avSec">Har scene kitne second ka (4 se 10; Flow mein 8 sec free hai)</label>
@@ -281,7 +283,7 @@ $('#stScript').onclick=async()=>{const b=$('#stScript');
     if(!$('#avConsent').checked)return toast('Pehle consent checkbox tick karo');
     if(!$('#avName').value.trim())return toast('Avatar ka naam likho');
     body.avatar={name:$('#avName').value,role:$('#avRole').value,gender:$('#avGender').value,look:$('#avLook').value,
-      scenes:Number($('#avScenes').value),seconds:Number($('#avSec').value),presenter:Number($('#avPres').value),consent:true};
+      scenes:Number($('#avScenes').value),seconds:Number($('#avSec').value),presenter:Number($('#avPres').value),camera:$('#avCam').value,consent:true};
   }
   b.disabled=true;
   try{studio=await post('/api/clips/script',body);if(body.avatar){studio.seconds=body.avatar.seconds;studio.presenter=body.avatar.presenter}renderStudio();if(studio.note)toast(studio.note)}
