@@ -19,7 +19,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .. import clips as clipstudio, images, persist, pipeline, voice as voicelab
+from .. import clips as clipstudio, editor_agent, images, persist, pipeline, voice as voicelab
 from ..config import (IST, OUTPUT_DIR, REFERENCE_IMAGE, ROOT, env, load_history, now_ist)
 
 STATIC = Path(__file__).parent / "static"
@@ -211,6 +211,22 @@ def delete_item(name: str):
 
 
 # ---- clip studio (scene prompts -> aapke clips -> reel) ----
+@app.post("/api/clips/plan")
+async def clips_plan(request: Request):
+    """Editor agent: pacing ka plan (card). Koi media nahi chahiye, sirf scenes/seconds/presenter."""
+    body = await request.json()
+
+    def num(k, lo, hi, d):
+        try:
+            return min(max(float(body.get(k)), lo), hi)
+        except (TypeError, ValueError):
+            return d
+    n = int(num("scenes", 1, 12, 1))
+    hb = body.get("has_broll")
+    hb = [bool(x) for x in hb][:n] if isinstance(hb, list) else []
+    return editor_agent.plan_reel(n, num("seconds", 2, 10, 8), num("presenter", 2, 10, 4), hb)
+
+
 @app.post("/api/clips/script")
 async def clips_script(request: Request):
     body = await request.json() if request.headers.get("content-length") not in (None, "0") else {}
@@ -229,7 +245,7 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
                       speed: str = Form("1.1"), music_volume: str = Form("0.12"),
                       hook_text: str = Form(""), end_text: str = Form(""), voice_name: str = Form(""), voice_id: str = Form(""),
                       music_file: UploadFile | None = File(None), voice_file: UploadFile | None = File(None),
-                      broll_files: list[UploadFile] = File([]), broll_meta: str = Form("[]")):
+                      broll_files: list[UploadFile] = File([]), broll_meta: str = Form("[]"), auto_zoom: str = Form("1")):
     if not clips or len(clips) > 12:
         raise HTTPException(400, "1 se 12 clips chahiye")
     try:
@@ -340,7 +356,7 @@ async def clips_merge(clips: list[UploadFile] = File(...), dialogues: str = Form
 
     def work_fn():
         final = clipstudio.merge(paths, dlg, work, cfg, mus, say=pipeline._say, hook=hook_text[:80], end_text=end_text[:80],
-                                 voice=vox, convert=vc, broll=broll or None)
+                                 voice=vox, convert=vc, broll=broll or None, auto_zoom=auto_zoom == "1")
         for q in paths + [b["path"] for b in broll.values()] + ([mus] if mus else []) + ([vox] if vox else []):
             q.unlink(missing_ok=True)
         res = clipstudio.save_item(work, topic[:80], caption or topic, final)
